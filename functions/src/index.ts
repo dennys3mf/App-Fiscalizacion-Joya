@@ -1,5 +1,3 @@
-// functions/src/index.ts
-
 import {onRequest} from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import {PDFDocument, rgb, StandardFonts} from "pdf-lib";
@@ -30,8 +28,9 @@ export const verificarBoleta = onRequest(
       }
       const boletaData = doc.data() as FirebaseFirestore.DocumentData;
 
-      const fileResponse =
-        await storage.file("firmas/firma_gerente.png").download();
+      const fileResponse = await storage
+        .file("firmas/firma_gerente.png")
+        .download();
       const firmaBytes = fileResponse[0];
 
       const pdfDoc = await PDFDocument.create();
@@ -44,11 +43,7 @@ export const verificarBoleta = onRequest(
       let y = height - 50;
       const margin = 50;
 
-      const drawText = (
-        text: string,
-        size: number,
-        isBold = false
-      ) => {
+      const drawText = (text: string, size: number, isBold = false) => {
         page.drawText(text, {
           x: margin,
           y: y,
@@ -78,33 +73,36 @@ export const verificarBoleta = onRequest(
       drawText(boletaData.motivo, 11);
       y -= 10;
 
-      // Aquí puedes añadir los otros campos que guardas en la boleta
       drawText("Conforme:", 12, true);
       drawText(boletaData.conforme || "No especificado.", 11);
       y -= 10;
 
       drawText("Observaciones:", 12, true);
       drawText(boletaData.observaciones || "Ninguna.", 11);
-      y -= 100;
+      y -= 85; // Espacio ajustado para la firma
 
+      // Dibujar firma con nuevo tamaño y rotación
       page.drawImage(firmaImage, {
-        x: margin,
-        y: y,
-        width: 120,
-        height: 50,
+        x: margin - 100, // La movemos un poco a la derecha
+        y: y - 65, // La bajamos un poco para que quede sobre la línea
+        width: 360, // Mantenemos el tamaño más grande
+        height: 180,
       });
+
       drawText("________________________", 12);
       drawText("Gerente de Transportes", 11);
 
       const pdfBytes = await pdfDoc.save();
+      const fileName = `boleta_${boletaId}.pdf`;
       response.setHeader("Content-Type", "application/pdf");
       response.setHeader(
         "Content-Disposition",
-        `inline; filename="boleta_${boletaId}.pdf"`
+        `inline; filename="${fileName}"`
       );
       response.send(Buffer.from(pdfBytes));
     } catch (error) {
       console.error("Error al generar el PDF:", error);
       response.status(500).send("Error interno al generar el PDF.");
     }
-  });
+  }
+);
