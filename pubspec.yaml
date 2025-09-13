@@ -1,0 +1,48 @@
+name: app_fiscalizacion
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ---- Firebase ----
+  firebase_core: 2.21.0
+  firebase_auth: 4.12.1
+  firebase_auth_platform_interface: 7.0.3
+  cloud_firestore: 4.12.2
+  firebase_storage: 11.4.1 # Para almacenamiento de archivos en Firebase
+  cupertino_icons: ^1.0.8
+  esc_pos_utils_plus: ^2.0.4
+  intl: ^0.19.0                   # Versión corregida
+  shared_preferences: ^2.2.3
+  url_launcher: ^6.3.1
+  permission_handler: ^11.3.1     # <-- El que faltaba
+  image: ^4.2.0
+  print_bluetooth_thermal: ^1.1.6 # Esta es la versión correcta y estable
+  path_provider: ^2.1.3 # O la última versión que veas en pub.dev
+  crypto: ^3.0.3
+  pdf: ^3.11.0                    # <-- Movido a la sección correcta
+  printing: ^5.14.2               # <-- Movido a la sección correcta
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0           # <-- Versión corregida
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/logo_muni_joya.png
+    - assets/images/eslogan.png
+
+fonts:
+  - family: Inter
+    fonts:
+      - asset: assets/fonts/Inter-Regular.ttf
+      - asset: assets/fonts/Inter-Bold.ttf
+        weight: 700

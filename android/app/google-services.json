@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1089973154276",
+    "project_id": "app-fiscalizacion-joya",
+    "storage_bucket": "app-fiscalizacion-joya.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1089973154276:android:a7ff3a7348e2d1705d17f1",
+        "android_client_info": {
+          "package_name": "com.gabriel.boletasfiscales"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBt_KsDrh6gSnW2FdeifBQz3uYD8fYT2yU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
