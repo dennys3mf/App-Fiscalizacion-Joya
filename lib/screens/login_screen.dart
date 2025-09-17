@@ -74,10 +74,11 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
 
-    if (mounted)
+    if (mounted) {
       setState(() {
         _isLoading = false;
       });
+    }
   }
 
   @override

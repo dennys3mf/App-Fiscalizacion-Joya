@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../models/boleta_model.dart';
 import 'package:image/image.dart' as img;
 
 // NOTA: Se eliminó el import conflictivo de 'esc_pos_utils_plus'
@@ -81,190 +80,212 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
 
 // En lib/screens/fiscalizacion_form_screen.dart
 
-Future<void> _finalizarEImprimir() async {
-  if (_isPrinting) return;
-  setState(() { _isPrinting = true; });
+  Future<void> _finalizarEImprimir() async {
+    if (_isPrinting) return;
+    setState(() {
+      _isPrinting = true;
+    });
 
-  // 1. Validar campos
-  if (_placaController.text.isEmpty ||
-      _empresaController.text.isEmpty ||
-      _motivoController.text.isEmpty ||
-      _fiscalizadorController.text.isEmpty) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Por favor, complete todos los campos.')));
-    }
-    setState(() { _isPrinting = false; });
-    return;
-  }
-
-  final prefs = await SharedPreferences.getInstance();
-  final printerId = prefs.getString('printer_id');
-  if (printerId == null || printerId.isEmpty) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No hay impresora configurada.')));
-    }
-    setState(() { _isPrinting = false; });
-    return;
-  }
-
-  String? boletaId;
-
-  try {
-    // --- PASO CLAVE 1: GUARDAR EN FIRESTORE PRIMERO PARA OBTENER EL ID ---
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) throw Exception("Usuario no autenticado.");
-
-    final boletaData = {
-      'placa': _placaController.text,
-      'empresa': _empresaController.text,
-      'codigoFiscalizador': _fiscalizadorController.text,
-      'motivo': _motivoController.text,
-      'conforme': _conformeSeleccionado ?? 'No especificado',
-      'descripciones': _descripcionesController.text,
-      'observaciones': _observacionesInspectorController.text,
-      'fecha': FieldValue.serverTimestamp(),
-      'inspectorId': user.uid,
-      'inspectorEmail': user.email,
-    };
-
-    final docRef = await FirebaseFirestore.instance.collection('boletas').add(boletaData);
-    boletaId = docRef.id; // ¡Aquí obtenemos el ID único!
-
-    // --- PASO CLAVE 2: CONECTAR E IMPRIMIR ---
-    final bool connected =
-        await PrintBluetoothThermal.connect(macPrinterAddress: printerId);
-    if (connected && boletaId != null) {
-      
-      // --- PASO CLAVE 3: PASAR EL ID A LA FUNCIÓN ---
-      // Esta es la llamada corregida a la línea 119
-      List<int> bytes = await _crearBoletaBytes(boletaId);
-      
-      const int chunkSize = 512;
-      bool allChunksSent = true;
-      for (int i = 0; i < bytes.length; i += chunkSize) {
-        int end = (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
-        List<int> chunk = bytes.sublist(i, end);
-        
-        final bool result = await PrintBluetoothThermal.writeBytes(chunk);
-        if (!result) {
-          allChunksSent = false;
-          break;
-        }
-        await Future.delayed(const Duration(milliseconds: 80));
-      }
-      
+    // 1. Validar campos
+    if (_placaController.text.isEmpty ||
+        _empresaController.text.isEmpty ||
+        _motivoController.text.isEmpty ||
+        _fiscalizadorController.text.isEmpty) {
       if (mounted) {
-        final message = allChunksSent ? 'Impresión y guardado exitosos' : 'Error al imprimir';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
-        if(allChunksSent) _limpiarCampos();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Por favor, complete todos los campos.')));
       }
-    } else {
-      throw Exception("No se pudo conectar a la impresora.");
+      setState(() {
+        _isPrinting = false;
+      });
+      return;
     }
-  } catch (e) {
-    if (boletaId != null) {
-      await FirebaseFirestore.instance.collection('boletas').doc(boletaId).delete();
+
+    final prefs = await SharedPreferences.getInstance();
+    final printerId = prefs.getString('printer_id');
+    if (printerId == null || printerId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No hay impresora configurada.')));
+      }
+      setState(() {
+        _isPrinting = false;
+      });
+      return;
     }
-    if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
-  } finally {
-    await PrintBluetoothThermal.disconnect;
-    if (mounted) setState(() { _isPrinting = false; });
+
+    String? boletaId;
+
+    try {
+      // --- PASO CLAVE 1: GUARDAR EN FIRESTORE PRIMERO PARA OBTENER EL ID ---
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception("Usuario no autenticado.");
+
+      final boletaData = {
+        'placa': _placaController.text,
+        'empresa': _empresaController.text,
+        'codigoFiscalizador': _fiscalizadorController.text,
+        'motivo': _motivoController.text,
+        'conforme': _conformeSeleccionado ?? 'No especificado',
+        'descripciones': _descripcionesController.text,
+        'observaciones': _observacionesInspectorController.text,
+        'fecha': FieldValue.serverTimestamp(),
+        'inspectorId': user.uid,
+        'inspectorEmail': user.email,
+      };
+
+      final docRef = await FirebaseFirestore.instance
+          .collection('boletas')
+          .add(boletaData);
+      boletaId = docRef.id; // ¡Aquí obtenemos el ID único!
+
+      // --- PASO CLAVE 2: CONECTAR E IMPRIMIR ---
+      final bool connected =
+          await PrintBluetoothThermal.connect(macPrinterAddress: printerId);
+      if (connected) {
+        // --- PASO CLAVE 3: PASAR EL ID A LA FUNCIÓN ---
+        // Esta es la llamada corregida a la línea 119
+        List<int> bytes = await _crearBoletaBytes(boletaId);
+
+        const int chunkSize = 512;
+        bool allChunksSent = true;
+        for (int i = 0; i < bytes.length; i += chunkSize) {
+          int end =
+              (i + chunkSize < bytes.length) ? i + chunkSize : bytes.length;
+          List<int> chunk = bytes.sublist(i, end);
+
+          final bool result = await PrintBluetoothThermal.writeBytes(chunk);
+          if (!result) {
+            allChunksSent = false;
+            break;
+          }
+          await Future.delayed(const Duration(milliseconds: 80));
+        }
+
+        if (mounted) {
+          final message = allChunksSent
+              ? 'Impresión y guardado exitosos'
+              : 'Error al imprimir';
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message)));
+          if (allChunksSent) _limpiarCampos();
+        }
+      } else {
+        throw Exception("No se pudo conectar a la impresora.");
+      }
+    } catch (e) {
+      if (boletaId != null) {
+        await FirebaseFirestore.instance
+            .collection('boletas')
+            .doc(boletaId)
+            .delete();
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+      }
+    } finally {
+      await PrintBluetoothThermal.disconnect;
+      if (mounted) {
+        setState(() {
+          _isPrinting = false;
+        });
+      }
+    }
   }
-}
 
-Future<List<int>> _crearBoletaBytes(String boletaId) async { // <-- 1. AÑADIMOS EL PARÁMETRO AQUÍ
-  final profile = await CapabilityProfile.load();
-  final generator = Generator(PaperSize.mm58, profile);
-  List<int> bytes = [];
+  Future<List<int>> _crearBoletaBytes(String boletaId) async {
+    // <-- 1. AÑADIMOS EL PARÁMETRO AQUÍ
+    final profile = await CapabilityProfile.load();
+    final generator = Generator(PaperSize.mm58, profile);
+    List<int> bytes = [];
 
-  // Logo y Títulos
-  final ByteData data =
-      await rootBundle.load('assets/images/logo_muni_joya.png');
-  final Uint8List assetBytes = data.buffer.asUint8List();
-  final img.Image? image = img.decodeImage(assetBytes);
-  if (image != null) {
-    bytes += generator.image(image, align: PosAlign.center);
+    // Logo y Títulos
+    final ByteData data =
+        await rootBundle.load('assets/images/logo_muni_joya.png');
+    final Uint8List assetBytes = data.buffer.asUint8List();
+    final img.Image? image = img.decodeImage(assetBytes);
+    if (image != null) {
+      bytes += generator.image(image, align: PosAlign.center);
+    }
+
+    bytes += generator.text('BOLETA DE FISCALIZACION',
+        styles: const PosStyles(
+            align: PosAlign.center,
+            bold: true,
+            height: PosTextSize.size2,
+            width: PosTextSize.size2));
+    bytes += generator.text('MUNICIPALIDAD DE LA JOYA',
+        styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.hr();
+
+    // Datos Principales
+    bytes += generator.row([
+      PosColumn(text: 'Fecha:', width: 4),
+      PosColumn(
+          text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()),
+          width: 8,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.row([
+      PosColumn(text: 'Placa:', width: 4),
+      PosColumn(
+          text: _placaController.text.toUpperCase(),
+          width: 8,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.row([
+      PosColumn(text: 'Empresa:', width: 4),
+      PosColumn(
+          text: _empresaController.text.toUpperCase(),
+          width: 8,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.row([
+      PosColumn(text: 'Fiscalizador:', width: 7),
+      PosColumn(
+          text: _fiscalizadorController.text.toUpperCase(),
+          width: 5,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.hr();
+    bytes += generator.text('MOTIVO:', styles: const PosStyles(bold: true));
+    bytes += generator.text(_motivoController.text, linesAfter: 1);
+    bytes += generator.text('CONFORME:', styles: const PosStyles(bold: true));
+    bytes += generator.text(_conformeSeleccionado ?? 'No especificado',
+        linesAfter: 1);
+    bytes +=
+        generator.text('DESCRIPCIONES:', styles: const PosStyles(bold: true));
+    bytes += generator.text(
+        _descripcionesController.text.isNotEmpty
+            ? _descripcionesController.text
+            : 'Ninguna.',
+        linesAfter: 1);
+    bytes += generator.text('OBSERVACIONES DEL INSPECTOR:',
+        styles: const PosStyles(bold: true));
+    bytes += generator.text(_observacionesInspectorController.text.isNotEmpty
+        ? _observacionesInspectorController.text
+        : 'Ninguna.');
+    bytes += generator.feed(2);
+
+    // --- 2. CÓDIGO QR CORREGIDO ---
+    // Usamos el boletaId que recibimos para crear la URL completa
+    final String qrData =
+        'https://southamerica-west1-app-fiscalizacion-joya.cloudfunctions.net/verificarBoleta?id=$boletaId';
+
+    bytes += generator.qrcode(qrData);
+    bytes += generator.text('Escanee para verificar boleta',
+        styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(2);
+    bytes += generator.text('------------------',
+        styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.text('Firma Inspector',
+        styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.feed(2);
+    bytes += generator.cut();
+
+    return bytes;
   }
-
-  bytes += generator.text('BOLETA DE FISCALIZACION',
-      styles: const PosStyles(
-          align: PosAlign.center,
-          bold: true,
-          height: PosTextSize.size2,
-          width: PosTextSize.size2));
-  bytes += generator.text('MUNICIPALIDAD DE LA JOYA',
-      styles: const PosStyles(align: PosAlign.center));
-  bytes += generator.hr();
-
-  // Datos Principales
-  bytes += generator.row([
-    PosColumn(text: 'Fecha:', width: 4),
-    PosColumn(
-        text: DateFormat('dd/MM/yy HH:mm').format(DateTime.now()),
-        width: 8,
-        styles: const PosStyles(align: PosAlign.right)),
-  ]);
-  bytes += generator.row([
-    PosColumn(text: 'Placa:', width: 4),
-    PosColumn(
-        text: _placaController.text.toUpperCase(),
-        width: 8,
-        styles: const PosStyles(align: PosAlign.right)),
-  ]);
-  bytes += generator.row([
-    PosColumn(text: 'Empresa:', width: 4),
-    PosColumn(
-        text: _empresaController.text.toUpperCase(),
-        width: 8,
-        styles: const PosStyles(align: PosAlign.right)),
-  ]);
-  bytes += generator.row([
-    PosColumn(text: 'Fiscalizador:', width: 5),
-    PosColumn(
-        text: _fiscalizadorController.text.toUpperCase(),
-        width: 7,
-        styles: const PosStyles(align: PosAlign.right)),
-  ]);
-  bytes += generator.hr();
-  bytes += generator.text('MOTIVO:', styles: const PosStyles(bold: true));
-  bytes += generator.text(_motivoController.text, linesAfter: 1);
-  bytes += generator.text('CONFORME:', styles: const PosStyles(bold: true));
-  bytes += generator.text(_conformeSeleccionado ?? 'No especificado',
-      linesAfter: 1);
-  bytes +=
-      generator.text('DESCRIPCIONES:', styles: const PosStyles(bold: true));
-  bytes += generator.text(
-      _descripcionesController.text.isNotEmpty
-          ? _descripcionesController.text
-          : 'Ninguna.',
-      linesAfter: 1);
-  bytes += generator.text('OBSERVACIONES DEL INSPECTOR:',
-      styles: const PosStyles(bold: true));
-  bytes += generator.text(_observacionesInspectorController.text.isNotEmpty
-      ? _observacionesInspectorController.text
-      : 'Ninguna.');
-  bytes += generator.feed(2);
-
-  // --- 2. CÓDIGO QR CORREGIDO ---
-  // Usamos el boletaId que recibimos para crear la URL completa
-  final String qrData =
-      'https://southamerica-west1-app-fiscalizacion-joya.cloudfunctions.net/verificarBoleta?id=$boletaId';
-
-  bytes += generator.qrcode(qrData);
-  bytes += generator.text('Escanee para verificar boleta',
-      styles: const PosStyles(align: PosAlign.center));
-  bytes += generator.feed(2);
-  bytes += generator.text('------------------',
-      styles: const PosStyles(align: PosAlign.center));
-  bytes += generator.text('Firma del Inspector',
-      styles: const PosStyles(align: PosAlign.center));
-  bytes += generator.feed(2);
-  bytes += generator.cut();
-
-  return bytes;
-}
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +336,7 @@ Future<List<int>> _crearBoletaBytes(String boletaId) async { // <-- 1. AÑADIMOS
                   borderRadius: BorderRadius.circular(28.0),
                   boxShadow: [
                     BoxShadow(
+                      // ignore: deprecated_member_use
                       color: Colors.black.withOpacity(0.18),
                       blurRadius: 18,
                       offset: const Offset(0, 8),
