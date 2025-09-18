@@ -66,6 +66,8 @@ export const verificarBoleta = onRequest(
       drawText(`Fecha: ${fechaFormateada}`, 12);
       drawText(`Placa: ${boletaData.placa}`, 12);
       drawText(`Empresa: ${boletaData.empresa}`, 12);
+      drawText(`Conductor: ${boletaData.nombreConductor || 'No registrado'}`, 12);
+      drawText(`N° Licencia: ${boletaData.numeroLicencia || 'No registrada'}`, 12);
       drawText(`Inspector: ${boletaData.inspectorEmail}`, 12);
       y -= 15;
 

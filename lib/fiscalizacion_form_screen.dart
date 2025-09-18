@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,10 +8,9 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image/image.dart' as img;
-
-// NOTA: Se eliminó el import conflictivo de 'esc_pos_utils_plus'
-// ya que 'print_bluetooth_thermal' ya provee estas herramientas.
 
 // Tu paleta de colores personalizada
 const Color fondoNegro = Color(0xFF181818);
@@ -35,10 +35,14 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
   final _fiscalizadorController = TextEditingController();
   final _motivoController = TextEditingController();
   final List<String> _opcionesConforme = ['Sí', 'No', 'Parcialmente'];
+  File? _fotoLicencia;
   final _descripcionesController = TextEditingController();
   final _observacionesInspectorController = TextEditingController();
+  final _licenciaController = TextEditingController(); // <-- NUEVO
+  final _conductorController = TextEditingController(); // <-- NUEVO
   String _fechaHoraActual = "";
   String? _conformeSeleccionado;
+
   bool _isPrinting = false;
 
   @override
@@ -49,6 +53,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     _motivoController.dispose();
     _descripcionesController.dispose();
     _observacionesInspectorController.dispose();
+    _licenciaController.dispose(); // <-- NUEVO
+    _conductorController.dispose(); // <-- NUEVO
     super.dispose();
   }
 
@@ -71,11 +77,65 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     _empresaController.clear();
     _motivoController.clear();
     _fiscalizadorController.clear();
+    _licenciaController.clear(); // <-- NUEVO
+    _conductorController.clear(); // <-- NUEVO
     setState(() {
       _conformeSeleccionado = null;
+      _fotoLicencia = null; // <-- NUEVO
     });
     _descripcionesController.clear();
     _observacionesInspectorController.clear();
+  }
+
+  Future<void> _tomarFoto() async {
+    final picker = ImagePicker();
+    final XFile? pickedFile = await picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 50, // Comprime la imagen para que no sea tan pesada
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _fotoLicencia = File(pickedFile.path);
+      });
+    }
+  }
+  final TextStyle _estiloTextoCampo = const TextStyle(
+    color: blancoDiia,
+    fontFamily: 'Inter',
+    fontSize: 16,
+  );
+
+  /// 📌 Método que decora los campos
+  InputDecoration _decoracionCampo({
+    required String label,
+    required String hint,
+    required IconData icon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(
+        color: celesteDiia,
+        fontFamily: 'Inter',
+        fontWeight: FontWeight.bold,
+      ),
+      hintText: hint,
+      hintStyle: const TextStyle(
+        color: grisClaroDiia,
+        fontFamily: 'Inter',
+      ),
+      prefixIcon: Icon(icon, color: celesteDiia),
+      filled: true,
+      fillColor: fondoNegro,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: celesteDiia, width: 1.2),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(18),
+        borderSide: const BorderSide(color: azulClaroDiia, width: 1.5),
+      ),
+    );
   }
 
 // En lib/screens/fiscalizacion_form_screen.dart
@@ -89,6 +149,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     // 1. Validar campos
     if (_placaController.text.isEmpty ||
         _empresaController.text.isEmpty ||
+        _licenciaController.text.isEmpty ||
+        _conductorController.text.isEmpty ||
         _motivoController.text.isEmpty ||
         _fiscalizadorController.text.isEmpty) {
       if (mounted) {
@@ -124,6 +186,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
       final boletaData = {
         'placa': _placaController.text,
         'empresa': _empresaController.text,
+        'numeroLicencia': _licenciaController.text, // <-- NUEVO
+        'nombreConductor': _conductorController.text, // <-- NUEVO
         'codigoFiscalizador': _fiscalizadorController.text,
         'motivo': _motivoController.text,
         'conforme': _conformeSeleccionado ?? 'No especificado',
@@ -132,12 +196,25 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
         'fecha': FieldValue.serverTimestamp(),
         'inspectorId': user.uid,
         'inspectorEmail': user.email,
+        'urlFotoLicencia': '', // Dejamos el campo listo
       };
 
       final docRef = await FirebaseFirestore.instance
           .collection('boletas')
           .add(boletaData);
       boletaId = docRef.id; // ¡Aquí obtenemos el ID único!
+
+      String urlFotoLicencia = '';
+      if (_fotoLicencia != null) {
+        final ref = FirebaseStorage.instance.ref('licencias/$boletaId.jpg');
+        await ref.putFile(_fotoLicencia!);
+        urlFotoLicencia = await ref.getDownloadURL();
+      }
+
+      // 4. Actualizamos la boleta en Firestore con la URL de la foto
+      if (urlFotoLicencia.isNotEmpty) {
+        await docRef.update({'urlFotoLicencia': urlFotoLicencia});
+      }
 
       // --- PASO CLAVE 2: CONECTAR E IMPRIMIR ---
       final bool connected =
@@ -219,6 +296,24 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
         styles: const PosStyles(align: PosAlign.center));
     bytes += generator.hr();
 
+    // --- NUEVO ENCABEZADO ---
+    bytes += generator.text('ACTA DE CONTROL N° 7003004138',
+        styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text('D.S. 017-2009-MTC',
+        styles: const PosStyles(align: PosAlign.center));
+    bytes += generator.hr();
+    bytes +=
+        generator.text('F.1 Infraccion', styles: const PosStyles(bold: true));
+    bytes += generator.text(
+      'INFRACCIÓN DE QUIEN REALIZA ACTIVIDAD DE TRANSPORTE SIN AUTORIZACIÓN CON RESPONSABILIDAD SOLIDARIA DEL PROPIETARIO DEL VEHÍCULO. Prestar el servicio de transporte de personas, de mercancías o mixto, sin contar con autorización otorgada por la autoridad competente o utilizando una modalidad o ámbito distinto del autorizado.',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.text(
+      'Quien subvencione la prestacion no autorizada incurrira en la misma infraccion...',
+      styles: PosStyles(align: PosAlign.center, bold: true),
+    );
+    bytes += generator.hr();
+
     // Datos Principales
     bytes += generator.row([
       PosColumn(text: 'Fecha:', width: 4),
@@ -232,6 +327,20 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
       PosColumn(
           text: _placaController.text.toUpperCase(),
           width: 8,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.row([
+      PosColumn(text: 'Conductor:', width: 5),
+      PosColumn(
+          text: _conductorController.text.toUpperCase(),
+          width: 7,
+          styles: const PosStyles(align: PosAlign.right)),
+    ]);
+    bytes += generator.row([
+      PosColumn(text: 'N Licencia:', width: 5),
+      PosColumn(
+          text: _licenciaController.text.toUpperCase(),
+          width: 7,
           styles: const PosStyles(align: PosAlign.right)),
     ]);
     bytes += generator.row([
@@ -276,11 +385,17 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     bytes += generator.qrcode(qrData);
     bytes += generator.text('Escanee para verificar boleta',
         styles: const PosStyles(align: PosAlign.center));
+
+    bytes += generator.feed(2);
+    bytes += generator.text('___________________',
+        styles: const PosStyles(align: PosAlign.left));
+    bytes += generator.text('Firma del Conductor',
+        styles: const PosStyles(align: PosAlign.left));
     bytes += generator.feed(2);
     bytes += generator.text('------------------',
-        styles: const PosStyles(align: PosAlign.center));
+        styles: const PosStyles(align: PosAlign.right));
     bytes += generator.text('Firma Inspector',
-        styles: const PosStyles(align: PosAlign.center));
+        styles: const PosStyles(align: PosAlign.right));
     bytes += generator.feed(2);
     bytes += generator.cut();
 
@@ -289,8 +404,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Tu nuevo y excelente diseño visual se mantiene intacto
     final textTheme = Theme.of(context).textTheme;
+
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -336,7 +451,6 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                   borderRadius: BorderRadius.circular(28.0),
                   boxShadow: [
                     BoxShadow(
-                      // ignore: deprecated_member_use
                       color: Colors.black.withOpacity(0.18),
                       blurRadius: 18,
                       offset: const Offset(0, 8),
@@ -368,54 +482,61 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                     const SizedBox(height: 18),
                     const Divider(color: grisClaroDiia, thickness: 1.2),
                     const SizedBox(height: 18),
+
+                    // 🚗 Placa
                     TextField(
                       controller: _placaController,
-                      decoration: InputDecoration(
-                        labelText: 'Número de Placa',
-                        hintText: 'Ejemplo: V1A-123',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.directions_car_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Número de Placa',
+                        hint: 'Ejemplo: V1A-123',
+                        icon: Icons.directions_car_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 20),
+
+                    // 🏢 Empresa
                     TextField(
                       controller: _empresaController,
-                      decoration: InputDecoration(
-                        labelText: 'Nombre de la Empresa',
-                        hintText: 'Ejemplo: Transportes Perú S.A.',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.business_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Nombre de la Empresa',
+                        hint: 'Ejemplo: Transportes Perú S.A.',
+                        icon: Icons.business_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 20),
+
+                    // 👤 Nombre del Conductor
+                    TextField(
+                      controller: _conductorController,
+                      decoration: _decoracionCampo(
+                        label: 'Nombre del Conductor',
+                        hint: 'Ejemplo: Juan Pérez Ramírez',
+                        icon: Icons.person_outline,
+                      ),
+                      style: _estiloTextoCampo,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // 🔑 Nro. Licencia
+                    TextField(
+                      controller: _licenciaController,
+                      decoration: _decoracionCampo(
+                        label: 'Número de Licencia',
+                        hint: 'Ejemplo: B1234567',
+                        icon: Icons.credit_card_outlined,
+                      ),
+                      style: _estiloTextoCampo,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 20),
+                    
+
+                    // 📅 Fecha y hora
                     Row(
                       children: [
                         const Icon(Icons.calendar_today_outlined,
@@ -436,72 +557,40 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                       ],
                     ),
                     const SizedBox(height: 20),
+
+                    // 👮 Fiscalizador
                     TextField(
                       controller: _fiscalizadorController,
-                      decoration: InputDecoration(
-                        labelText: 'Código del Fiscalizador',
-                        hintText: 'Ejemplo: FISC1234',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.badge_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Código del Fiscalizador',
+                        hint: 'Ejemplo: FISC1234',
+                        icon: Icons.badge_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 20),
+
+                    // ❗ Motivo
                     TextField(
                       controller: _motivoController,
-                      decoration: InputDecoration(
-                        labelText: 'Motivo',
-                        hintText: 'Ejemplo: Falta de documentos',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.report_problem_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Motivo',
+                        hint: 'Ejemplo: Falta de documentos',
+                        icon: Icons.report_problem_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       textInputAction: TextInputAction.next,
                     ),
                     const SizedBox(height: 20),
+
+                    // ✅ Conforme
                     DropdownButtonFormField<String>(
                       value: _conformeSeleccionado,
-                      decoration: InputDecoration(
-                        labelText: 'Conforme',
-                        hintText: 'Ejemplo: Sí / No',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.check_circle_outline,
-                            color: celesteDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Conforme',
+                        hint: 'Ejemplo: Sí / No',
+                        icon: Icons.check_circle_outline,
                       ),
                       items: _opcionesConforme.map((String value) {
                         return DropdownMenuItem<String>(
@@ -520,57 +609,50 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                       },
                     ),
                     const SizedBox(height: 20),
+
+                    // 📝 Descripciones
                     TextField(
                       controller: _descripcionesController,
-                      decoration: InputDecoration(
-                        labelText: 'Descripciones',
-                        hintText: 'Ejemplo: Vehículo sin SOAT',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.description_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                      decoration: _decoracionCampo(
+                        label: 'Descripciones',
+                        hint: 'Ejemplo: Vehículo sin SOAT',
+                        icon: Icons.description_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       maxLines: 3,
                     ),
                     const SizedBox(height: 20),
+
+                    // 💬 Observaciones
                     TextField(
                       controller: _observacionesInspectorController,
-                      decoration: InputDecoration(
-                        labelText: 'Observaciones del Inspector',
-                        hintText:
+                      decoration: _decoracionCampo(
+                        label: 'Observaciones del Inspector',
+                        hint:
                             'Ejemplo: El conductor mostró actitud colaborativa',
-                        labelStyle: const TextStyle(
-                            color: blancoDiia,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold),
-                        prefixIcon: const Icon(Icons.comment_outlined,
-                            color: azulClaroDiia),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: const BorderSide(color: celesteDiia)),
-                        filled: true,
-                        fillColor: fondoNegro,
-                        hintStyle: const TextStyle(
-                            color: grisClaroDiia, fontFamily: 'Inter'),
+                        icon: Icons.comment_outlined,
                       ),
-                      style: const TextStyle(
-                          color: blancoDiia, fontFamily: 'Inter', fontSize: 16),
+                      style: _estiloTextoCampo,
                       maxLines: 3,
                     ),
-                    const SizedBox(height: 32),
-                    const Divider(color: celesteDiia, thickness: 1.2),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 20),
+
+                    // 📸 Foto de Licencia
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                    icon: Icon(_fotoLicencia == null ? Icons.camera_alt_outlined : Icons.check_circle, color: celesteDiia),
+                          label: Text(_fotoLicencia == null ? 'Tomar Foto de Licencia' : 'Foto Capturada', style: TextStyle(color: celesteDiia)),
+                          onPressed: _tomarFoto,
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: celesteDiia),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // 🔴 Botón Finalizar
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -586,14 +668,12 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                                 ? 'Imprimiendo...'
                                 : 'Finalizar e Imprimir',
                             style: const TextStyle(
-                                fontFamily: 'Inter',
+                                fontFamily: 'Inter Italic',
                                 fontWeight: FontWeight.bold,
                                 fontSize: 17)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: rojoDiia,
                           foregroundColor: blancoDiia,
-                          textStyle: const TextStyle(
-                              fontWeight: FontWeight.bold, fontFamily: 'Inter'),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(18)),
                           padding: const EdgeInsets.symmetric(vertical: 18),
