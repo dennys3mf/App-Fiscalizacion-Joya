@@ -28,10 +28,11 @@ dependencies:
   permission_handler: ^12.0.1     # <-- El que faltaba
   image: ^4.2.0
   print_bluetooth_thermal: ^1.1.6 # Esta es la versión correcta y estable
-  path_provider: ^2.1.3 # O la última versión que veas en pub.dev
+  path_provider: ^2.1.5 # O la última versión que veas en pub.dev
   crypto: ^3.0.3
-  pdf: ^3.11.0                    # <-- Movido a la sección correcta
+  pdf: ^3.11.3                    # <-- Movido a la sección correcta
   printing: ^5.14.2               # <-- Movido a la sección correcta
+  firebase_app_check: ^0.4.0+1
 
 dev_dependencies:
   flutter_test:
@@ -41,12 +42,19 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/logo_muni_joya.png
-    - assets/images/eslogan.png
-
-fonts:
-  - family: Inter
-    fonts:
-      - asset: assets/fonts/Inter-Regular.ttf
-      - asset: assets/fonts/Inter-Bold.ttf
-        weight: 700
+    - assets/images/
+    - assets/fonts/
+ 
+  # La palabra 'fonts:' debe tener 2 espacios a la izquierda.
+  # El primer guion '-' debe tener 4 espacios a la izquierda.
+  # 'family' debe tener 6 espacios.
+  # El segundo 'fonts:' debe tener 8 espacios.
+  # El segundo guion '-' debe tener 10 espacios.
+  # 'asset' debe tener 12 espacios.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Italic-VariableFont_wdth,wght.ttf
+        - asset: assets/fonts/Roboto-VariableFont_wdth,wght.ttf
+          weight: 700
+  

@@ -1,3 +1,4 @@
+import 'package:app_fiscalizacion/screens/auth_wrapper.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -8,6 +9,8 @@ import 'screens/impresoras_screen.dart';
 import 'screens/historial_screen.dart';
 import 'package:firebase_core/firebase_core.dart'; // <-- 1. Importar Firebase Core
 import 'firebase_options.dart'; // <-- 2. Importar el archivo de configuración
+import 'package:firebase_app_check/firebase_app_check.dart'; // <-- 1. IMPORTA EL PAQUETE
+
 
 // Paleta de colores inspirada en el gobierno del Perú
 const Color azulGobierno = Color(0xFF002B5C); // Azul institucional
@@ -25,6 +28,11 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
   // ------------------------------------
+
+  await FirebaseAppCheck.instance.activate(
+    // Usamos 'playIntegrity' que es el proveedor estándar y recomendado para producción.
+    androidProvider: AndroidProvider.debug,
+  );
 
   await initializeDateFormatting('es_PE', null);
 
@@ -118,7 +126,7 @@ class MyApp extends StatelessWidget {
           bodyMedium: TextStyle(fontSize: 14.0, color: Colors.white60),
         ),
       ),
-      home: isLoggedIn ? HomeScreen(username: username) : const LoginScreen(),
+      home: const AuthWrapper(),
       routes: {
         '/fiscalizacion_form': (context) => const FiscalizacionFormScreen(),
         '/impresoras': (context) => const ImpresorasScreen(),

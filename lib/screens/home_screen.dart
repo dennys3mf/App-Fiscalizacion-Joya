@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+// lib/screens/home_screen.dart
 
-import 'login_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 
 // Paleta y gradiente inspirados en Diia
 const Color fondoGradienteInicio = Color(0xFFB2E2E2); // Verde-azul pastel
@@ -13,38 +13,16 @@ const Color textoSecundario = Color(0xFF6B6B6B); // Gris oscuro
 const Color acento = Color(0xFFE60000); // Rojo vibrante
 const Color azulDiia = Color(0xFF007AFF); // Azul acento
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required String username});
+class HomeScreen extends StatelessWidget {
+  final String username;
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
+  const HomeScreen({super.key, required this.username});
 
-class _HomeScreenState extends State<HomeScreen> {
-  String _username = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _cargarNombreUsuario();
-  }
-
-  Future<void> _cargarNombreUsuario() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _username = prefs.getString('username') ?? 'Usuario';
-    });
-  }
-
-  Future<void> _cerrarSesion() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Limpiamos todos los datos guardados
-
-    if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
-      );
-    }
+  // Lógica de logout optimizada.
+  // Solo le decimos a Firebase que cierre sesión.
+  // El AuthWrapper se encargará de redirigir a la pantalla de login.
+  Future<void> _signOut(BuildContext context) async {
+    await FirebaseAuth.instance.signOut();
   }
 
   @override
@@ -75,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               icon: const Icon(Icons.exit_to_app, color: acento, size: 28),
               tooltip: 'Salir',
-              onPressed: _cerrarSesion,
+              onPressed: () => _signOut(context),
             ),
           ],
         ),
@@ -109,15 +87,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         color: textoPrincipal,
                         fontFamily: 'Inter',
                         fontWeight: FontWeight.bold,
-                        fontSize:
-                            28, // Ajusta el tamaño para que no sea tan grande
+                        fontSize: 28,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     Text(
-                        'Gestiona y visualiza tus fiscalizaciones de manera moderna y segura.',
-                        style: textTheme.bodyLarge?.copyWith(
-                            color: textoSecundario, fontFamily: 'Inter')),
+                      username, // Muestra el email del usuario logueado
+                      style: textTheme.bodyLarge?.copyWith(
+                        color: textoSecundario,
+                        fontFamily: 'Inter',
+                        fontSize: 16,
+                      ),
+                    ),
                     const SizedBox(height: 32),
                     ElevatedButton.icon(
                       icon: const Icon(Icons.add_circle_outline,
@@ -129,6 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         backgroundColor:
                             const Color.fromARGB(255, 218, 221, 23),
                         foregroundColor: textoPrincipal,
+                        minimumSize: const Size(double.infinity, 50),
                         textStyle: const TextStyle(
                             fontWeight: FontWeight.bold, fontFamily: 'Inter'),
                         shape: RoundedRectangleBorder(
@@ -149,6 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: cardColor,
                         foregroundColor: azulDiia,
+                        minimumSize: const Size(double.infinity, 50),
                         textStyle: const TextStyle(
                             fontWeight: FontWeight.bold, fontFamily: 'Inter'),
                         shape: RoundedRectangleBorder(
@@ -170,6 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: cardColor,
                         foregroundColor: textoSecundario,
+                        minimumSize: const Size(double.infinity, 50),
                         textStyle: const TextStyle(
                             fontWeight: FontWeight.bold, fontFamily: 'Inter'),
                         shape: RoundedRectangleBorder(

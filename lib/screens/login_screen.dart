@@ -30,37 +30,18 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      // --- LÓGICA DE LOGIN CON FIREBASE ---
       final email = _emailController.text.trim();
       final password = _passwordController.text;
-
-      // Obtener la instancia singleton de FirebaseAuth
-      final auth = FirebaseAuth.instance;
-
-      // Intentar hacer sign in
-      final result = await auth.signInWithEmailAndPassword(
+      
+      // La lógica de login con Firebase se mantiene igual
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
+      
+      // AuthWrapper se encargará de la navegación, por lo que no necesitamos
+      // el Navigator.pushReplacement aquí.
 
-      if (!mounted) return;
-
-      final user = result.user;
-      if (user != null) {
-        // Usuario autenticado correctamente
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => HomeScreen(
-              username: user.email ?? 'Usuario',
-            ),
-          ),
-        );
-      } else {
-        // Este caso no debería ocurrir normalmente
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error de autenticación')),
-        );
-      }
     } on FirebaseAuthException catch (e) {
       String message = 'Ocurrió un error al iniciar sesión.';
       if (e.code == 'user-not-found' ||
@@ -72,29 +53,35 @@ class _LoginScreenState extends State<LoginScreen> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
+    } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // UI similar, pero con Correo en lugar de Usuario
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(32.0),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Aquí puedes poner tu logo o un ícono
-              const Icon(Icons.shield_outlined, size: 80),
+              const Icon(Icons.shield_outlined, size: 80, color: Colors.blueAccent),
               const SizedBox(height: 20),
-              Text('Control de Fiscalización',
-                  style: Theme.of(context).textTheme.headlineMedium),
+              Text(
+                'Control de Fiscalización',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Acceso para personal autorizado',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
               const SizedBox(height: 40),
               TextField(
                 controller: _emailController,
@@ -113,17 +100,29 @@ class _LoginScreenState extends State<LoginScreen> {
                 onSubmitted: (_) => _login(),
               ),
               const SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _login,
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('Iniciar Sesión'),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : _login,
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Iniciar Sesión'),
+                ),
               ),
-              TextButton(
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) => const RegistrationScreen())),
-                child: const Text('¿No tienes una cuenta? Regístrate'),
-              )
+              const SizedBox(height: 40),
+
+              // --- CAMBIO CLAVE AQUÍ ---
+              // Reemplazamos el botón de registro por un texto informativo.
+              const Text(
+                'Para obtener acceso, comuníquese con el administrador del sistema.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+              ),
+              // --------------------------
             ],
           ),
         ),
