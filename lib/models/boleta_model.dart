@@ -1,52 +1,72 @@
-// lib/models/boleta_model.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class Boleta {
+class BoletaModel {
+  final String id;
   final String placa;
   final String empresa;
   final String numeroLicencia;
-  final String nombreConductor;
+  final String conductor;
   final String codigoFiscalizador;
   final String motivo;
   final String conforme;
-  final String descripciones;
-  final String observaciones;
+  final String? descripciones;
+  final String? observaciones;
   final String inspectorId;
   final String? inspectorEmail;
-  String? urlFotoLicencia; // Se actualiza después
+  final DateTime fecha;
+  final String? urlFotoLicencia;
 
-  Boleta({
+  BoletaModel({
+    required this.id,
     required this.placa,
     required this.empresa,
     required this.numeroLicencia,
-    required this.nombreConductor,
+    required this.conductor,
     required this.codigoFiscalizador,
     required this.motivo,
     required this.conforme,
-    required this.descripciones,
-    required this.observaciones,
+    this.descripciones,
+    this.observaciones,
     required this.inspectorId,
     this.inspectorEmail,
+    required this.fecha,
     this.urlFotoLicencia,
   });
 
-  // Convierte un objeto Boleta a un Map para Firestore
+  factory BoletaModel.fromMap(Map<String, dynamic> map) {
+    return BoletaModel(
+      id: map['id'],
+      placa: map['placa'] ?? '',
+      empresa: map['empresa'] ?? '',
+      numeroLicencia: map['numeroLicencia'] ?? '',
+      conductor: map['nombreConductor'] ?? '',
+      codigoFiscalizador: map['codigoFiscalizador'] ?? '',
+      motivo: map['motivo'] ?? '',
+      conforme: map['conforme'] ?? 'No especificado',
+      descripciones: map['descripciones'],
+      observaciones: map['observaciones'],
+      inspectorId: map['inspectorId'] ?? '',
+      inspectorEmail: map['inspectorEmail'],
+      fecha: (map['fecha'] as Timestamp).toDate(),
+      urlFotoLicencia: map['urlFotoLicencia'],
+    );
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'placa': placa,
       'empresa': empresa,
       'numeroLicencia': numeroLicencia,
-      'nombreConductor': nombreConductor,
+      'nombreConductor': conductor,
       'codigoFiscalizador': codigoFiscalizador,
       'motivo': motivo,
       'conforme': conforme,
       'descripciones': descripciones,
       'observaciones': observaciones,
-      'fecha': FieldValue.serverTimestamp(), // La fecha se añade aquí
       'inspectorId': inspectorId,
       'inspectorEmail': inspectorEmail,
-      'urlFotoLicencia': urlFotoLicencia ?? '',
+      'fecha': Timestamp.fromDate(fecha),
+      'urlFotoLicencia': urlFotoLicencia,
     };
   }
 }

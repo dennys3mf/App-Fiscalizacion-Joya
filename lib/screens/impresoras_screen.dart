@@ -1,20 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart'; // <-- Se añade el import
-
-// Paleta y gradiente inspirados en Diia
-const Color fondoGradienteInicio = Color(0xFFB2E2E2); // Verde-azul pastel
-const Color fondoGradienteFin = Color(0xFFFFE2E2); // Rosa pastel
-const Color cardColor = Color(0xFFEAF6FB); // Celeste muy claro
-const Color cardShadow = Color(0x22000000); // Sombra sutil
-const Color textoPrincipal = Color(0xFF181818); // Negro profundo
-const Color textoSecundario = Color(0xFF6B6B6B); // Gris oscuro
-const Color acento = Color(0xFFE60000); // Rojo vibrante
-const Color azulDiia = Color(0xFF007AFF); // Azul acento
+import '../theme/app_theme.dart';
 
 class ImpresorasScreen extends StatefulWidget {
-  const ImpresorasScreen({super.key});
+  final VoidCallback onBack;
+
+  const ImpresorasScreen({super.key, required this.onBack});
 
   @override
   State<ImpresorasScreen> createState() => _ImpresorasScreenState();
@@ -22,226 +14,227 @@ class ImpresorasScreen extends StatefulWidget {
 
 class _ImpresorasScreenState extends State<ImpresorasScreen> {
   bool _isLoading = true;
-  List<BluetoothInfo> _dispositivos = [];
-  String? _dispositivoGuardadoId;
+  bool _isScanning = false;
+  List<BluetoothInfo> _devices = [];
+  String? _savedPrinterId;
+  String? _savedPrinterName;
 
   @override
   void initState() {
     super.initState();
-    _solicitarPermisosYCargarDispositivos();
+    _loadSavedPrinter();
+    _getBluetoothDevices();
   }
 
-  /// Pide los permisos de Bluetooth y luego carga los dispositivos vinculados.
-  Future<void> _solicitarPermisosYCargarDispositivos() async {
+  Future<void> _loadSavedPrinter() async {
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _isLoading = true;
+      _savedPrinterId = prefs.getString('printer_id');
+      _savedPrinterName = prefs.getString('printer_name');
     });
-
-    // Solicitar permisos de Bluetooth Scan y Connect
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
-    ].request();
-
-    // Verificar si los permisos fueron concedidos
-    if (statuses[Permission.bluetoothScan] == PermissionStatus.granted &&
-        statuses[Permission.bluetoothConnect] == PermissionStatus.granted) {
-      // Si se concedieron, procedemos a cargar los dispositivos
-      await _cargarDispositivos();
-    } else {
-      // Si se negaron, mostramos un mensaje al usuario
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'Se requieren permisos de dispositivos cercanos para encontrar impresoras.')));
-      }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-      });
-    }
   }
 
-  /// Carga la lista de dispositivos Bluetooth que ya están vinculados al teléfono.
-  Future<void> _cargarDispositivos() async {
-    final prefs = await SharedPreferences.getInstance();
-    _dispositivoGuardadoId = prefs.getString('printer_id');
+  Future<void> _getBluetoothDevices() async {
+    setState(() {
+      _isScanning = true;
+      _isLoading = _devices.isEmpty;
+    });
+    
+    await Future.delayed(const Duration(seconds: 1));
+    _devices = await PrintBluetoothThermal.pairedBluetooths;
 
-    try {
-      _dispositivos = await PrintBluetoothThermal.pairedBluetooths;
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al obtener dispositivos: $e')));
-      }
-    }
+    setState(() {
+      _isLoading = false;
+      _isScanning = false;
+    });
   }
 
-  /// Guarda el dispositivo seleccionado en las preferencias.
-  Future<void> _seleccionarDispositivo(BluetoothInfo device) async {
+  Future<void> _selectDevice(BluetoothInfo device) async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // --- CORRECCIÓN DEFINITIVA ---
+    // Usamos 'macAdress' con una 'd', que es el nombre correcto de la propiedad en la librería.
     await prefs.setString('printer_id', device.macAdress);
     await prefs.setString('printer_name', device.name);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Impresora "${device.name}" guardada.')));
-      Navigator.of(context).pop();
-    }
+    
+    setState(() {
+      // --- CORRECCIÓN DEFINITIVA ---
+      _savedPrinterId = device.macAdress;
+      _savedPrinterName = device.name;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Impresora "${device.name}" configurada.'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      backgroundColor: Colors.transparent,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Impresoras',
-            style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.bold)),
-        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: widget.onBack,
+        ),
+        title: const Text('Configurar Impresora'),
+        actions: [
+          IconButton(
+            icon: _isScanning
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.search),
+            onPressed: _isScanning ? null : _getBluetoothDevices,
+            tooltip: 'Buscar Dispositivos',
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF8ECDF7), Color(0xFFB2E2E2)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: AppTheme.backgroundGradient,
         ),
         child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
-              child: Material(
-                elevation: 12.0,
-                borderRadius: BorderRadius.circular(28.0),
-                color: cardColor,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(28.0),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+          top: false,
+          child: ListView(
+            padding: const EdgeInsets.all(16.0),
+            children: [
+              _buildInfoCard(),
+              const SizedBox(height: 24),
+              _buildDeviceListCard(),
+              const SizedBox(height: 24),
+              if (_savedPrinterId != null && _savedPrinterName != null) _buildCurrentSelectionCard(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [AppTheme.primaryBlue.withOpacity(0.1), AppTheme.primaryBlue.withOpacity(0.2)]),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.info_outline, color: AppTheme.primaryBlue),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   Text(
+                    'Configuración de Impresora',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info_outline, color: azulDiia, size: 24),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Selecciona y gestiona tus impresoras Bluetooth o WiFi para imprimir boletas.',
-                                style: TextStyle(
-                                  color: azulDiia,
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 15,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(color: azulDiia, thickness: 1.2),
-                      const SizedBox(height: 18),
-                      const Text('Configura tu impresora',
-                          style: TextStyle(
-                            color: textoPrincipal,
-                            fontFamily: 'Inter',
-                            fontWeight: FontWeight.bold,
-                            fontSize: 22,
-                          )),
-                      const SizedBox(height: 24),
-                      _isLoading
-                          ? const Center(child: CircularProgressIndicator())
-                          : _dispositivos.isEmpty
-                              ? const Center(
-                                  child: Text(
-                                    'No se encontraron impresoras vinculadas.',
-                                    style: TextStyle(
-                                      color: textoSecundario,
-                                      fontFamily: 'Inter',
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                )
-                              : ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: _dispositivos.length,
-                                  itemBuilder: (context, index) {
-                                    final device = _dispositivos[index];
-                                    final isSelected = device.macAdress ==
-                                        _dispositivoGuardadoId;
-                                    return Container(
-                                      margin: const EdgeInsets.symmetric(
-                                          vertical: 8),
-                                      child: Material(
-                                        color: isSelected
-                                            ? azulDiia.withOpacity(0.12)
-                                            : cardColor,
-                                        elevation: isSelected ? 6 : 2,
-                                        borderRadius: BorderRadius.circular(18),
-                                        child: ListTile(
-                                          leading: Icon(Icons.print,
-                                              color: isSelected
-                                                  ? azulDiia
-                                                  : textoSecundario,
-                                              size: 28),
-                                          title: Text(
-                                            device.name,
-                                            style: const TextStyle(
-                                              color: textoPrincipal,
-                                              fontFamily: 'Inter',
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 16,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            device.macAdress,
-                                            style: const TextStyle(
-                                              color: textoSecundario,
-                                              fontFamily: 'Inter',
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                          trailing: isSelected
-                                              ? const Icon(Icons.check_circle,
-                                                  color: azulDiia, size: 28)
-                                              : null,
-                                          shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(18)),
-                                          onTap: () =>
-                                              _seleccionarDispositivo(device),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                    ],
+                   SizedBox(height: 4),
+                  Text(
+                    'Selecciona una impresora Bluetooth para emitir las boletas. Asegúrate de que esté encendida y vinculada a tu teléfono.',
+                    style: TextStyle(color: AppTheme.mutedForeground, fontSize: 14),
                   ),
-                ),
+                ],
               ),
             ),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeviceListCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Impresoras Disponibles', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                if (_isScanning)
+                  const Text('Buscando...', style: TextStyle(color: AppTheme.mutedForeground))
+                else
+                  Text('${_devices.length} encontradas', style: const TextStyle(color: AppTheme.mutedForeground)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _isLoading
+              ? const Padding(padding: EdgeInsets.symmetric(vertical: 32.0), child: CircularProgressIndicator())
+              : _devices.isEmpty
+                ? const Padding(padding: EdgeInsets.symmetric(vertical: 32.0), child: Text('No se encontraron impresoras'))
+                : Column(
+                    children: _devices.map((device) {
+                      // --- CORRECCIÓN DEFINITIVA ---
+                      final isSelected = device.macAdress == _savedPrinterId;
+                      return Card(
+                        elevation: isSelected ? 2 : 0,
+                        shadowColor: isSelected ? AppTheme.primaryRed.withOpacity(0.2) : Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: isSelected ? const BorderSide(color: AppTheme.primaryRed) : BorderSide.none
+                        ),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: isSelected ? AppTheme.primaryRed.withOpacity(0.1) : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(Icons.bluetooth, color: isSelected ? AppTheme.primaryRed : AppTheme.mutedForeground),
+                          ),
+                          title: Text(device.name, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                          // --- CORRECCIÓN DEFINITIVA ---
+                          subtitle: Text(device.macAdress),
+                          trailing: isSelected ? const Icon(Icons.check_circle, color: AppTheme.primaryRed) : null,
+                          onTap: () => _selectDevice(device),
+                        ),
+                      );
+                    }).toList(),
+                  )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentSelectionCard() {
+    return Card(
+      color: Colors.green.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.green.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.check_circle_outline, color: Colors.green),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Impresora Configurada', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('"${_savedPrinterName ?? 'N/A'}" está lista para usar.', style: TextStyle(color: Colors.green.shade800)),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );

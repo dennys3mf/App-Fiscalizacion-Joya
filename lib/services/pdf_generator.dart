@@ -1,127 +1,87 @@
-// lib/services/pdf_generator.dart
-
 import 'dart:typed_data';
-import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:intl/intl.dart';
+import '../models/boleta_model.dart'; // Asegúrate que la ruta sea correcta
 
 class PdfGenerator {
-  static Future<Uint8List> generateBoletaPdf(Map<String, String> data) async {
+  static Future<Uint8List> generateBoletaPdf(Map<String, dynamic> data) async {
     final pdf = pw.Document();
-
-    // --- ARREGLO 2: CARGAR FUENTES UNICODE ---
-    final fontData = await rootBundle.load("assets/fonts/Roboto-Italic-VariableFont_wdth,wght.ttf");
-    final ttf = pw.Font.ttf(fontData);
-    final boldFontData = await rootBundle.load("assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
-    final boldTtf = pw.Font.ttf(boldFontData);
-
-    final logoImage = pw.MemoryImage(
-      (await rootBundle.load('assets/images/logo_muni_joya.png'))
-          .buffer
-          .asUint8List(),
-    );
-
-    // Definimos estilos reutilizables CON LA NUEVA FUENTE
-    final headerStyle = pw.TextStyle(font: boldTtf, fontSize: 10);
-    final bodyStyle = pw.TextStyle(font: ttf, fontSize: 9);
-    final smallStyle = pw.TextStyle(font: ttf, fontSize: 8);
-
+    final boletaId = data['boletaId'] ?? 'N/A';
+    
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat.roll57,
-        margin: const pw.EdgeInsets.all(10),
+        pageFormat: PdfPageFormat.a4,
         build: (pw.Context context) {
           return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              pw.Image(logoImage, height: 40),
-              pw.SizedBox(height: 5),
-              pw.Text('MUNICIPALIDAD DISTRITAL DE LA JOYA', style: headerStyle),
-              pw.Text('GERENCIA DE TRANSPORTE', style: bodyStyle),
-              pw.Divider(height: 10),
-              pw.Text('BOLETA DE FISCALIZACIÓN', style: bodyStyle.copyWith(fontSize: 14)),
-              pw.SizedBox(height: 5),
-              pw.Divider(height: 10),
-              pw.Text('ACTA DE CONTROL N° ${data['actaNro']}', style: headerStyle.copyWith(fontSize: 12)),
-              pw.Text('D.S. 017-2009-MTC', style: bodyStyle),
-              pw.Divider(height: 10),
+              // Encabezado
+              pw.Container(
+                padding: const pw.EdgeInsets.all(16),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 2),
+                ),
+                child: pw.Column(
+                  children: [
+                    pw.Text('MUNICIPALIDAD DISTRITAL DE LA JOYA', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+                    pw.Text('GERENCIA DE TRANSPORTE'),
+                    pw.Divider(),
+                    pw.Text('BOLETA DE FISCALIZACIÓN', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 18)),
+                    pw.Text('ACTA DE CONTROL Nro: ${data['actaNro'] ?? 'N/A'}'),
+                  ]
+                )
+              ),
+              pw.SizedBox(height: 20),
+              
+              // Contenido
+              _buildDetailRow('Fecha y Hora:', data['fechaHora'] ?? 'N/A'),
+              _buildDetailRow('Placa:', data['placa'] ?? 'N/A'),
+              _buildDetailRow('Conductor:', data['conductor'] ?? 'N/A'),
+              _buildDetailRow('N° Licencia:', data['licencia'] ?? 'N/A'),
+              _buildDetailRow('Empresa:', data['empresa'] ?? 'N/A'),
+              _buildDetailRow('Fiscalizador:', data['fiscalizador'] ?? 'N/A'),
+              pw.Divider(height: 20),
+              _buildDetailRow('Motivo:', data['motivo'] ?? 'N/A'),
+              _buildDetailRow('Conforme:', data['conforme'] ?? 'N/A'),
+              _buildDetailRow('Observaciones:', data['observaciones'] ?? 'N/A'),
+              
+              pw.Spacer(),
 
-              pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('F.1', style: headerStyle),
-                  pw.Text('Infracción', style: headerStyle), // Ortografía corregida
-                ],
+              // QR Code
+              pw.Center(
+                child: pw.BarcodeWidget(
+                  barcode: pw.Barcode.qrCode(),
+                  data: 'https://southamerica-west1-app-fiscalizacion-joya.cloudfunctions.net/verificarBoleta?id=$boletaId',
+                  width: 150,
+                  height: 150,
+                ),
               ),
-              pw.SizedBox(height: 5),
-              pw.Text(
-                'INFRACCION DE QUIEN REALIZA ACTIVIDAD DE TRANSPORTE SIN AUTORIZACION CON RESPONSABILIDAD SOLIDARIA DEL PROPIETARIO DEL VEHICULO.',
-                style: smallStyle,
-                textAlign: pw.TextAlign.justify,
-              ),
-              pw.Divider(height: 10),
-              
-              _buildPdfRow('Fecha y Hora:', data['fechaHora']!, ttf, boldTtf),
-              _buildPdfRow('Placa:', data['placa']!, ttf, boldTtf),
-              _buildPdfRow('Conductor:', data['conductor']!, ttf, boldTtf),
-              _buildPdfRow('N° Licencia:', data['licencia']!, ttf, boldTtf), // 'N°' funcionará ahora
-              _buildPdfRow('Empresa:', data['empresa']!, ttf, boldTtf),
-              _buildPdfRow('Fiscalizador:', data['fiscalizador']!, ttf, boldTtf),
-              pw.Divider(height: 10),
-              
-              _buildPdfSection('MOTIVO:', data['motivo']!, ttf, boldTtf),
-              _buildPdfSection('CONFORME:', data['conforme']!, ttf, boldTtf),
-              _buildPdfSection('OBSERVACIONES:', data['observaciones']!, ttf, boldTtf),
-              
-              // --- ARREGLO 1: REEMPLAZAR SPACER POR SIZEDBOX ---
-              // Esto le da a la columna una altura fija y evita el error.
-              pw.SizedBox(height: 20), 
-              
-              pw.BarcodeWidget(
-                barcode: pw.Barcode.qrCode(),
-                data: 'https://.../verificarBoleta?id=${data['boletaId']}',
-                width: 70,
-                height: 70,
-              ),
-              pw.SizedBox(height: 2),
-              pw.Text('Escanee para verificar', style: smallStyle),
-              pw.SizedBox(height: 20),
-              pw.Text('_________________________', style: bodyStyle),
-              pw.Text('Firma del Conductor', style: bodyStyle),
-              pw.SizedBox(height: 20),
-              pw.Text('_________________________', style: bodyStyle),
-              pw.Text('Firma del Inspector', style: bodyStyle),
+               pw.Center(child: pw.Text('Escanee para verificar boleta')),
             ],
           );
         },
       ),
     );
-
     return pdf.save();
   }
-
-  // --- MÉTODOS AUXILIARES ACTUALIZADOS PARA ACEPTAR LAS FUENTES ---
-  static pw.Widget _buildPdfRow(String title, String value, pw.Font ttf, pw.Font boldTtf) {
+  
+  static pw.Widget _buildDetailRow(String title, String value) {
     return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 1),
+      padding: const pw.EdgeInsets.symmetric(vertical: 4),
       child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Text(title, style: pw.TextStyle(font: boldTtf, fontSize: 9)),
-          pw.Text(value, style: pw.TextStyle(font: ttf, fontSize: 9)),
+          pw.SizedBox(
+            width: 120,
+            child: pw.Text(title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+          ),
+          pw.Expanded(
+            child: pw.Text(value),
+          ),
         ],
-      ),
-    );
-  }
-
-  static pw.Widget _buildPdfSection(String title, String content, pw.Font ttf, pw.Font boldTtf) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(title, style: pw.TextStyle(font: boldTtf, fontSize: 9)),
-        pw.Text(content, style: pw.TextStyle(font: ttf, fontSize: 9)),
-        pw.SizedBox(height: 5),
-      ],
+      )
     );
   }
 }
