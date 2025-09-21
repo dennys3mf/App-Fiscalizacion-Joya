@@ -30,11 +30,11 @@ void main() async {
   // Usamos kIsWeb para saber si estamos en la web o en una app móvil
   if (kIsWeb) {
     // Si estamos en la web, activamos App Check con reCAPTCHA Enterprise
-    await FirebaseAppCheck.instance.activate(
-      // IMPORTANTE: Recuerda obtener esta clave desde tu Consola de Firebase
-      webProvider:
+    //await FirebaseAppCheck.instance.activate(
+      /* IMPORTANTE: Recuerda obtener esta clave desde tu Consola de Firebase
+        webProvider:
           ReCaptchaV3Provider('6LcDm9ArAAAAAHoXpf-u8nPjKlkDT3u4Ggr4T5aT'),
-    );
+    );*/
   } else {
     // Android/iOS
     await FirebaseAppCheck.instance.activate(
