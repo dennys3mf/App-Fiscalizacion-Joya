@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, required String errorMessage});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
