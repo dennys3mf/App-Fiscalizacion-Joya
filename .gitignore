@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# ---- NUEVA LÍNEA ----
+# Ignorar archivos de configuración de Firebase
+# **/google-services.json

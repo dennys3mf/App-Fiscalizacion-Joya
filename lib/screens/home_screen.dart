@@ -1,32 +1,84 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../theme/app_theme.dart'; // Asegúrate de que la ruta a tu tema es correcta
+import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
+import '../models/user_model.dart'; // <-- MEJORA: Importamos el modelo de usuario
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget { // <-- MEJORA: Convertido a StatefulWidget
   final void Function(String) onNavigate;
+  final String username; // Este campo ya no es tan necesario, pero lo mantenemos por compatibilidad
 
-  const HomeScreen({super.key, required this.onNavigate, required String username});
+  const HomeScreen({super.key, required this.onNavigate, required this.username});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  // --- MEJORA: Lógica para obtener y guardar los datos del usuario actual ---
+  UserModel? _currentUser;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(firebaseUser.uid).get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _currentUser = UserModel.fromMap(doc.data()!);
+          _isLoading = false;
+        });
+      } else {
+         if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+      // Opcional: mostrar un error si no se pueden cargar los datos del perfil
+    }
+  }
+  // --- FIN DE LA MEJORA ---
 
   Future<void> _logout(BuildContext context) async {
     try {
       await FirebaseAuth.instance.signOut();
-      // El AuthWrapper se encargará de redirigir a la pantalla de login
+      // El AuthWrapper se encargará de redirigir
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cerrar sesión: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cerrar sesión: $e')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final userName = user?.displayName ?? user?.email ?? "Inspector";
+    // --- MEJORA: Muestra un indicador de carga mientras se obtienen los datos ---
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppTheme.primaryRed)),
+      );
+    }
+    // --- FIN DE LA MEJORA ---
+
+    // --- MEJORA: Usa el nombre real del perfil del usuario ---
+    final userName = _currentUser?.nombreCompleto ?? "Inspector";
+    // --- FIN DE LA MEJORA ---
 
     return Scaffold(
-      // --- AppBar estilo Figma ---
       appBar: AppBar(
-        automaticallyImplyLeading: false, // Oculta el botón de retroceso
+        automaticallyImplyLeading: false,
         title: Row(
           children: [
             Container(
@@ -44,10 +96,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Image.asset(
-                'assets/images/eslogan.png', // Logo del eslogan
-                fit: BoxFit.contain,
-              ),
+              child: Image.asset('assets/images/eslogan.png', fit: BoxFit.contain),
             ),
             const SizedBox(width: 12),
             const Text('Fiscalización', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -66,13 +115,12 @@ class HomeScreen extends StatelessWidget {
           gradient: AppTheme.backgroundGradient,
         ),
         child: SafeArea(
-          top: false, // La AppBar ya gestiona el safe area superior
+          top: false,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // --- Saludo al Usuario ---
                 Row(
                   children: [
                     Container(
@@ -89,7 +137,7 @@ class HomeScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Hola, $userName', style: Theme.of(context).textTheme.titleLarge),
-                         Text(
+                        const Text(
                           '¿Qué necesitas hacer hoy?',
                           style: TextStyle(color: AppTheme.mutedForeground, fontSize: 14),
                         ),
@@ -98,8 +146,6 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 32),
-
-                // --- Tarjetas de Acción ---
                 _buildActionCard(
                   context: context,
                   title: 'Nueva Fiscalización',
@@ -107,7 +153,7 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.add,
                   iconColor: Colors.white,
                   iconBackgroundColor: AppTheme.primaryGradient,
-                  onTap: () => onNavigate('/fiscalizacion_form'),
+                  onTap: () => widget.onNavigate('/fiscalizacion_form'),
                   isPrimary: true,
                 ),
                 const SizedBox(height: 16),
@@ -118,7 +164,7 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.print_outlined,
                   iconColor: AppTheme.foregroundDark,
                   iconBackgroundColor: LinearGradient(colors: [Colors.grey.shade200, Colors.grey.shade300]),
-                  onTap: () => onNavigate('/impresoras'),
+                  onTap: () => widget.onNavigate('/impresoras'),
                 ),
                 const SizedBox(height: 16),
                 _buildActionCard(
@@ -128,12 +174,25 @@ class HomeScreen extends StatelessWidget {
                   icon: Icons.article_outlined,
                   iconColor: AppTheme.primaryRed,
                   iconBackgroundColor: LinearGradient(colors: [AppTheme.primaryRed.withOpacity(0.1), AppTheme.primaryRed.withOpacity(0.2)]),
-                  onTap: () => onNavigate('/historial'),
+                  onTap: () => widget.onNavigate('/historial'),
                 ),
 
-                const SizedBox(height: 40),
+                // --- MEJORA: Botón de administrador condicional ---
+                if (_currentUser?.rol == 'gerente') ...[
+                  const SizedBox(height: 16),
+                  _buildActionCard(
+                    context: context,
+                    title: 'Gestionar Inspectores',
+                    subtitle: 'Añadir o ver personal',
+                    icon: Icons.admin_panel_settings_outlined,
+                    iconColor: AppTheme.primaryRed,
+                    iconBackgroundColor: LinearGradient(colors: [AppTheme.primaryRed.withOpacity(0.1), AppTheme.primaryRed.withOpacity(0.2)]),
+                    onTap: () => widget.onNavigate('/dashboard'),
+                  ),
+                ],
+                // --- FIN DE LA MEJORA ---
 
-                // --- Información de Estado ---
+                const SizedBox(height: 40),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
@@ -163,7 +222,6 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // --- Widget Reutilizable para Tarjetas de Acción ---
   Widget _buildActionCard({
     required BuildContext context,
     required String title,
@@ -181,10 +239,10 @@ class HomeScreen extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-           decoration: BoxDecoration(
-             gradient: isPrimary ? LinearGradient(colors: [Colors.white, AppTheme.primaryRed.withOpacity(0.05)]) : null,
-             color: isPrimary ? null : Colors.white,
-           ),
+          decoration: BoxDecoration(
+            gradient: isPrimary ? LinearGradient(colors: [Colors.white, AppTheme.primaryRed.withOpacity(0.05)]) : null,
+            color: isPrimary ? null : Colors.white,
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -222,7 +280,6 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-// Widget para el punto parpadeante
 class BlinkingDot extends StatefulWidget {
   const BlinkingDot({super.key});
 

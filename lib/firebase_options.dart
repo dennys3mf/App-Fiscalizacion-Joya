@@ -17,10 +17,7 @@ import 'package:flutter/foundation.dart'
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
-      throw UnsupportedError(
-        'DefaultFirebaseOptions have not been configured for web - '
-        'you can reconfigure this by running the FlutterFire CLI again.',
-      );
+      return web;
     }
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
@@ -57,6 +54,18 @@ class DefaultFirebaseOptions {
     appId: '1:1089973154276:android:a7ff3a7348e2d1705d17f1',
     messagingSenderId: '1089973154276',
     projectId: 'app-fiscalizacion-joya',
+    databaseURL: 'https://app-fiscalizacion-joya-default-rtdb.firebaseio.com',
     storageBucket: 'app-fiscalizacion-joya.firebasestorage.app',
   );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyA7T1HyfND4gzO5ON6oX2E6MJFEHwVs7FM',
+    appId: '1:1089973154276:web:71bf22912cccafb95d17f1',
+    messagingSenderId: '1089973154276',
+    projectId: 'app-fiscalizacion-joya',
+    authDomain: 'app-fiscalizacion-joya.firebaseapp.com',
+    databaseURL: 'https://app-fiscalizacion-joya-default-rtdb.firebaseio.com',
+    storageBucket: 'app-fiscalizacion-joya.firebasestorage.app',
+  );
+
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:app_fiscalizacion/models/boleta_model.dart';
+import 'package:app_fiscalizacion/models/user_model.dart'; // <-- MEJORA: Importamos el modelo de usuario
 import 'package:app_fiscalizacion/services/print_service.dart';
 import 'package:app_fiscalizacion/theme/app_theme.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,7 +11,6 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class FiscalizacionFormScreen extends StatefulWidget {
   final VoidCallback onBack;
@@ -32,11 +32,18 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
   final _licenciaController = TextEditingController();
   final _conductorController = TextEditingController();
   final _descripcionesController = TextEditingController();
+  final _multaController = TextEditingController();
+  String _estadoBoletaSeleccionado = 'Activa';
 
   final List<String> _opcionesConforme = ['Sí', 'No', 'Parcialmente'];
   File? _fotoLicencia;
   String? _conformeSeleccionado;
   bool _isProcessing = false;
+
+  // --- MEJORA: Lógica para obtener y guardar los datos del usuario actual ---
+  UserModel? _currentUser;
+  bool _isLoading = true;
+  // --- FIN DE LA MEJORA ---
 
   @override
   void initState() {
@@ -57,22 +64,35 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     super.dispose();
   }
 
-  // --- LÓGICA DE NEGOCIO ---
-
+  // --- MEJORA: La lógica ahora carga el perfil completo desde Firestore ---
   Future<void> _cargarDatosFiscalizador() async {
-    final prefs = await SharedPreferences.getInstance();
-    final codigo = prefs.getString('codigo_fiscalizador');
-    if (codigo != null && mounted) {
-      setState(() {
-        _fiscalizadorController.text = codigo;
-      });
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(firebaseUser.uid)
+          .get();
+      if (doc.exists && mounted) {
+        setState(() {
+          _currentUser = UserModel.fromMap(doc.data()!);
+          _fiscalizadorController.text =
+              _currentUser?.codigoFiscalizador ?? 'SIN CÓDIGO';
+          _isLoading = false;
+        });
+      } else {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
+  // --- FIN DE LA MEJORA ---
 
-  Future<void> _guardarDatosFiscalizador() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('codigo_fiscalizador', _fiscalizadorController.text);
-  }
+  // La función _guardarDatosFiscalizador ya no es necesaria, la podemos eliminar.
 
   Future<void> _limpiarCampos() async {
     _formKey.currentState?.reset();
@@ -87,6 +107,9 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
       _conformeSeleccionado = null;
       _fotoLicencia = null;
     });
+    // Volvemos a poner el código del fiscalizador que no debe borrarse
+    _fiscalizadorController.text =
+        _currentUser?.codigoFiscalizador ?? 'SIN CÓDIGO';
   }
 
   Future<void> _tomarFoto() async {
@@ -126,31 +149,37 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     setState(() => _isProcessing = true);
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
+    // --- MEJORA: Usamos el perfil del usuario que ya hemos cargado ---
+    if (user == null || _currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Error: Usuario no autenticado.'),
+            content: Text('Error: No se pudo cargar el perfil del usuario.'),
             backgroundColor: Colors.red),
       );
       setState(() => _isProcessing = false);
       return;
     }
+    // --- FIN DE LA MEJORA ---
 
     try {
-      await _guardarDatosFiscalizador();
-
       final boleta = BoletaModel(
         id: '',
         placa: _placaController.text.trim().toUpperCase(),
         empresa: _empresaController.text.trim(),
         numeroLicencia: _licenciaController.text.trim(),
         conductor: _conductorController.text.trim(),
-        codigoFiscalizador: _fiscalizadorController.text.trim(),
+        // --- MEJORA: Guardamos los datos correctos del inspector ---
+        codigoFiscalizador: _currentUser!.codigoFiscalizador ?? 'N/A',
+        inspectorNombre: _currentUser!.nombreCompleto,
+        // --- FIN DE LA MEJORA ---
         motivo: _motivoController.text.trim(),
         conforme: _conformeSeleccionado!,
         descripciones: _descripcionesController.text.trim(),
         observaciones: _observacionesController.text.trim(),
-        inspectorId: user.uid,
+        //inspectorId: user.uid,
+        inspectorId: _currentUser!.nombreCompleto,
+        multa: double.tryParse(_multaController.text) ?? 0.0,
+        estado: _estadoBoletaSeleccionado,
         inspectorEmail: user.email,
         fecha: DateTime.now(),
       );
@@ -167,22 +196,7 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
         await docRef.update({'urlFotoLicencia': url});
       }
 
-      final boletaFinal = BoletaModel(
-        id: docRef.id,
-        placa: boleta.placa,
-        empresa: boleta.empresa,
-        numeroLicencia: boleta.numeroLicencia,
-        conductor: boleta.conductor,
-        codigoFiscalizador: boleta.codigoFiscalizador,
-        motivo: boleta.motivo,
-        conforme: boleta.conforme,
-        descripciones: boleta.descripciones,
-        observaciones: boleta.observaciones,
-        inspectorId: boleta.inspectorId,
-        inspectorEmail: boleta.inspectorEmail,
-        fecha: boleta.fecha,
-        urlFotoLicencia: url,
-      );
+      final boletaFinal = boleta.copyWith(id: docRef.id, urlFotoLicencia: url);
 
       await PrintService.printBoleta(boletaFinal);
 
@@ -193,8 +207,6 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
       );
       await _limpiarCampos();
     } catch (e) {
-      // --- MEJORA EN EL MANEJO DE ERRORES ---
-      // Si el error es de conexión, mostramos un diálogo útil.
       if (e.toString().contains('No se pudo conectar')) {
         showDialog(
           context: context,
@@ -206,9 +218,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
               TextButton(
                 child: const Text('Ir a Configuración'),
                 onPressed: () {
-                  Navigator.of(context).pop(); // Cierra el diálogo
-                  Navigator.pushNamed(
-                      context, '/impresoras'); // Va a la pantalla de impresoras
+                  Navigator.of(context).pop();
+                  Navigator.pushNamed(context, '/impresoras');
                 },
               ),
               TextButton(
@@ -219,7 +230,6 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
           ),
         );
       } else {
-        // Para otros errores, mostramos el mensaje genérico.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text('Error al procesar: $e'),
@@ -233,7 +243,6 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     }
   }
 
-  // --- WIDGETS DE LA UI ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -249,28 +258,34 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
           ),
         ],
       ),
-      body: Container(
-        decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                _buildInfoCard(),
-                const SizedBox(height: 16),
-                _buildVehicleCard(),
-                const SizedBox(height: 16),
-                _buildDriverCard(),
-                const SizedBox(height: 16),
-                _buildInspectionCard(),
-                const SizedBox(height: 24),
-                _buildActions(),
-              ],
+      // --- MEJORA: Mostramos un indicador de carga mientras se obtienen los datos del inspector ---
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: AppTheme.primaryRed))
+          : Container(
+              // --- FIN DE LA MEJORA ---
+              decoration:
+                  const BoxDecoration(gradient: AppTheme.backgroundGradient),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    children: [
+                      _buildInfoCard(),
+                      const SizedBox(height: 16),
+                      _buildVehicleCard(),
+                      const SizedBox(height: 16),
+                      _buildDriverCard(),
+                      const SizedBox(height: 16),
+                      _buildInspectionCard(),
+                      const SizedBox(height: 24),
+                      _buildActions(),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -326,7 +341,7 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Fecha y Hora Actual',
+                            const Text('Fecha y Hora Actual',
                                 style: TextStyle(
                                     color: AppTheme.mutedForeground,
                                     fontSize: 12)),
@@ -342,17 +357,19 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                // --- MEJORA: Campo de código de fiscalizador automático y de solo lectura ---
                 TextFormField(
                   controller: _fiscalizadorController,
-                  decoration: const InputDecoration(
-                    labelText: 'Código del Fiscalizador *',
-                    hintText: 'FISC1234',
-                    prefixIcon: Icon(Icons.badge_outlined),
+                  readOnly: true, // El inspector no puede cambiar su código
+                  decoration: InputDecoration(
+                    labelText: 'Código del Fiscalizador',
+                    prefixIcon: const Icon(Icons.badge_outlined),
+                    filled: true,
+                    fillColor: Colors.grey
+                        .shade200, // Color de fondo para indicar que no es editable
                   ),
-                  textCapitalization: TextCapitalization.characters,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Campo requerido' : null,
                 ),
+                // --- FIN DE LA MEJORA ---
               ],
             ),
           ),
@@ -360,6 +377,8 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
       ),
     );
   }
+
+  // ... (El resto de los widgets _buildVehicleCard, _buildDriverCard, etc. se mantienen igual)
 
   Widget _buildVehicleCard() {
     return Card(
@@ -485,6 +504,35 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
                       setState(() => _conformeSeleccionado = value),
                   validator: (value) =>
                       value == null ? 'Seleccione una opción' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _multaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Monto de Multa (S/)',
+                    hintText: '0.00',
+                    prefixIcon: Icon(Icons.attach_money),
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: _estadoBoletaSeleccionado,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado de la Boleta',
+                    prefixIcon: Icon(Icons.flag_outlined),
+                  ),
+                  items: ['Activa', 'Pagada', 'Anulada']
+                      .map((estado) =>
+                          DropdownMenuItem(value: estado, child: Text(estado)))
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        _estadoBoletaSeleccionado = value;
+                      });
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

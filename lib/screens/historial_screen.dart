@@ -43,7 +43,7 @@ class _HistorialScreenState extends State<HistorialScreen>
     await Future.delayed(const Duration(seconds: 1));
   }
 
-  // --- Widgets de UI ---
+  // --- Widgets de UI (sin cambios en esta sección) ---
 
   Widget _getConformeWidget(String conforme) {
     IconData iconData;
@@ -138,7 +138,8 @@ class _HistorialScreenState extends State<HistorialScreen>
                     const SizedBox(height: 24),
                     _buildDetailSection('Detalles de Fiscalización', Icons.assignment, [
                       _buildDetailRow('Fecha y Hora', _formatDateTime(boleta.fecha)),
-                      _buildDetailRow('Fiscalizador', boleta.codigoFiscalizador),
+                      _buildDetailRow('Inspector', boleta.inspectorNombre ?? boleta.codigoFiscalizador),
+                      _buildDetailRow('Cód. Fiscalizador', boleta.codigoFiscalizador),
                       _buildDetailRow('Motivo', boleta.motivo),
                       _buildConformeRow('Conforme', boleta.conforme),
                       if (boleta.descripciones != null && boleta.descripciones!.isNotEmpty) _buildDetailRow('Descripciones', boleta.descripciones!),
@@ -282,30 +283,50 @@ class _HistorialScreenState extends State<HistorialScreen>
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: _searchController,
-              decoration: InputDecoration(hintText: 'Buscar por placa, empresa o conductor...', prefixIcon: const Icon(Icons.search)),
-              onChanged: (value) => setState(() => _searchTerm = value.toLowerCase()),
+              // --- CAMBIO SUGERIDO ---
+              // Usamos toUpperCase para que la búsqueda en Firestore funcione correctamente
+              onChanged: (value) => setState(() => _searchTerm = value.toUpperCase()),
+              decoration: const InputDecoration(
+                hintText: 'Buscar por placa...',
+                prefixIcon: Icon(Icons.search),
+              ),
             ),
           ),
         ),
       ),
       body: Container(
         decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
+        // ================== INICIO DE LA MEJORA ==================
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance.collection('boletas').orderBy('fecha', descending: true).snapshots(),
+          stream: _searchTerm.isEmpty
+              ? FirebaseFirestore.instance
+                  .collection('boletas')
+                  .orderBy('fecha', descending: true)
+                  .snapshots()
+              : FirebaseFirestore.instance
+                  .collection('boletas')
+                  .where('placa', isGreaterThanOrEqualTo: _searchTerm)
+                  .where('placa', isLessThanOrEqualTo: '$_searchTerm\uf8ff')
+                  .orderBy('placa')
+                  .snapshots(),
           builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppTheme.primaryRed));
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Center(child: Text('No hay boletas guardadas'));
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: AppTheme.primaryRed));
+            }
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return const Center(child: Text('No se encontraron boletas.'));
+            }
 
+            // La lógica de filtrado `.where(...)` que estaba aquí se ha eliminado.
+            // Los datos ya vienen filtrados desde Firestore.
             final boletas = snapshot.data!.docs
                 .map((doc) => BoletaModel.fromMap({'id': doc.id, ...doc.data() as Map<String, dynamic>}))
-                .where((boleta) {
-                  if (_searchTerm.isEmpty) return true;
-                  return boleta.placa.toLowerCase().contains(_searchTerm) ||
-                         boleta.empresa.toLowerCase().contains(_searchTerm) ||
-                         boleta.conductor.toLowerCase().contains(_searchTerm);
-                }).toList();
+                .toList();
 
-            if (boletas.isEmpty) return const Center(child: Text('No se encontraron resultados'));
+            // Re-ordenamos por fecha después de la búsqueda (opcional pero recomendado)
+            if (_searchTerm.isNotEmpty) {
+              boletas.sort((a, b) => b.fecha.compareTo(a.fecha));
+            }
 
             return ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -314,6 +335,7 @@ class _HistorialScreenState extends State<HistorialScreen>
             );
           },
         ),
+        // =================== FIN DE LA MEJORA ===================
       ),
     );
   }

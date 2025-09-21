@@ -13,6 +13,11 @@ class BoletaModel {
   final String? observaciones;
   final String inspectorId;
   final String? inspectorEmail;
+  // --- INICIO DE MEJORAS: Añadimos el nombre del inspector ---
+  final String? inspectorNombre;
+  final double? multa;
+  final String estado; // 'Activa', 'Pagada', 'Anulada'
+  // --- FIN DE MEJORAS ---
   final DateTime fecha;
   final String? urlFotoLicencia;
 
@@ -29,6 +34,11 @@ class BoletaModel {
     this.observaciones,
     required this.inspectorId,
     this.inspectorEmail,
+    // --- INICIO DE MEJORAS ---
+    this.inspectorNombre,
+    this.multa,
+    this.estado = 'Activa', // Valor por defecto 'Activa'
+    // --- FIN DE MEJORAS ---
     required this.fecha,
     this.urlFotoLicencia,
   });
@@ -39,6 +49,7 @@ class BoletaModel {
       placa: map['placa'] ?? '',
       empresa: map['empresa'] ?? '',
       numeroLicencia: map['numeroLicencia'] ?? '',
+      // Corregimos el nombre del campo para que coincida con Firestore
       conductor: map['nombreConductor'] ?? '',
       codigoFiscalizador: map['codigoFiscalizador'] ?? '',
       motivo: map['motivo'] ?? '',
@@ -47,6 +58,11 @@ class BoletaModel {
       observaciones: map['observaciones'],
       inspectorId: map['inspectorId'] ?? '',
       inspectorEmail: map['inspectorEmail'],
+      // --- INICIO DE MEJORAS ---
+      inspectorNombre: map['inspectorNombre'],
+      multa: (map['multa'] as num?)?.toDouble(),
+      estado: map['estado'] ?? 'Activa',
+      // --- FIN DE MEJORAS ---
       fecha: (map['fecha'] as Timestamp).toDate(),
       urlFotoLicencia: map['urlFotoLicencia'],
     );
@@ -65,8 +81,38 @@ class BoletaModel {
       'observaciones': observaciones,
       'inspectorId': inspectorId,
       'inspectorEmail': inspectorEmail,
+      // --- INICIO DE MEJORAS ---
+      'inspectorNombre': inspectorNombre,
+      'multa': multa,
+      'estado': estado,
+      // --- FIN DE MEJORAS ---
       'fecha': Timestamp.fromDate(fecha),
       'urlFotoLicencia': urlFotoLicencia,
     };
   }
+
+  // --- INICIO DE MEJORAS: Añadimos el método copyWith ---
+  BoletaModel copyWith({
+    String? id,
+    String? urlFotoLicencia,
+  }) {
+    return BoletaModel(
+      id: id ?? this.id,
+      placa: placa,
+      empresa: empresa,
+      numeroLicencia: numeroLicencia,
+      conductor: conductor,
+      codigoFiscalizador: codigoFiscalizador,
+      motivo: motivo,
+      conforme: conforme,
+      descripciones: descripciones,
+      observaciones: observaciones,
+      inspectorId: inspectorId,
+      inspectorEmail: inspectorEmail,
+      inspectorNombre: inspectorNombre,
+      fecha: fecha,
+      urlFotoLicencia: urlFotoLicencia ?? this.urlFotoLicencia,
+    );
+  }
+  // --- FIN DE MEJORAS ---
 }

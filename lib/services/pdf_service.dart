@@ -1,4 +1,7 @@
+import 'package:intl/intl.dart';
+
 import 'dart:typed_data';
+import 'package:flutter/services.dart'; // <-- IMPORTANTE: Añade esta línea
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -6,15 +9,24 @@ import 'package:intl/intl.dart';
 import '../models/boleta_model.dart';
 
 class PDFService {
+  // --- 1. Definimos los colores del logo para usarlos en el PDF ---
+  static const PdfColor rojoMuni = PdfColor.fromInt(0xffD32F2F);
+  static const PdfColor doradoMuni = PdfColor.fromInt(0xffFBC02D);
+
   static Future<void> generateAndSharePDF(BoletaModel boleta) async {
     final pdf = pw.Document();
+
+    // --- 2. Cargamos la imagen del logo desde los assets ---
+    final logoBytes = await rootBundle.load('assets/images/logo_muni_joya.png');
+    final logoImage = pw.MemoryImage(logoBytes.buffer.asUint8List());
 
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (pw.Context context) {
-          return _buildPDFContent(boleta);
+          // Pasamos la imagen del logo a la función que construye el contenido
+          return _buildPDFContent(boleta, logoImage);
         },
       ),
     );
@@ -25,31 +37,56 @@ class PDFService {
     );
   }
 
-  static pw.Widget _buildPDFContent(BoletaModel boleta) {
+  // --- 3. Actualizamos la función para que reciba el logo ---
+  static pw.Widget _buildPDFContent(BoletaModel boleta, pw.ImageProvider logoImage) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Container(
-          width: double.infinity,
-          padding: const pw.EdgeInsets.all(20),
-          decoration: pw.BoxDecoration(
-            color: PdfColors.red800,
-            borderRadius: pw.BorderRadius.circular(12),
-          ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text('LA JOYA AVANZA', style: pw.TextStyle(color: PdfColors.white, fontSize: 24, fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(height: 4),
-              pw.Text('MUNICIPALIDAD DISTRITAL DE LA JOYA', style: pw.TextStyle(color: PdfColors.white, fontSize: 14)),
-            ],
-          ),
+        // --- 4. Reemplazamos el encabezado antiguo por el nuevo diseño ---
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.center,
+          children: [
+            pw.Image(logoImage, width: 90, height: 90),
+            pw.SizedBox(width: 20),
+            pw.Expanded(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'MUNICIPALIDAD DISTRITAL DE LA JOYA',
+                    style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold,
+                      fontSize: 20,
+                      color: rojoMuni,
+                    ),
+                  ),
+                  pw.SizedBox(height: 4),
+                  pw.Text(
+                    'GERENCIA DE TRANSPORTE',
+                    style: pw.TextStyle(
+                      fontSize: 14,
+                      color: PdfColors.grey800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        pw.SizedBox(height: 24),
+        pw.Divider(height: 30, thickness: 2, color: doradoMuni),
         pw.Center(
-          child: pw.Text('BOLETA DE FISCALIZACIÓN', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
+          child: pw.Text(
+            'BOLETA DE FISCALIZACIÓN',
+            style: pw.TextStyle(
+              fontSize: 22,
+              fontWeight: pw.FontWeight.bold,
+              color: rojoMuni,
+            ),
+          ),
         ),
         pw.SizedBox(height: 24),
+        
+        // --- 5. Aplicamos el nuevo estilo a las secciones de datos ---
         _buildPDFSection(
           'DATOS DEL VEHÍCULO',
           [
@@ -70,21 +107,23 @@ class PDFService {
           'DETALLES DE LA FISCALIZACIÓN',
           [
             ['Fecha y Hora:', DateFormat('dd/MM/yyyy HH:mm').format(boleta.fecha)],
-            ['Fiscalizador:', boleta.codigoFiscalizador],
+            ['Inspector:', boleta.inspectorNombre ?? 'N/A'],
+            ['Cód. Fiscalizador:', boleta.codigoFiscalizador],
             ['Motivo:', boleta.motivo],
             ['Conforme:', boleta.conforme],
-            if (boleta.observaciones != null) ['Observaciones:', boleta.observaciones!],
+            if (boleta.observaciones != null && boleta.observaciones!.isNotEmpty)
+              ['Observaciones:', boleta.observaciones!],
           ],
         ),
       ],
     );
   }
 
+  // --- 6. Actualizamos el widget de sección para usar los nuevos colores ---
   static pw.Widget _buildPDFSection(String title, List<List<String>> data) {
     return pw.Container(
-      width: double.infinity,
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.grey400),
+        border: pw.Border.all(color: PdfColors.grey300),
         borderRadius: pw.BorderRadius.circular(8),
       ),
       child: pw.Column(
@@ -93,14 +132,21 @@ class PDFService {
           pw.Container(
             width: double.infinity,
             padding: const pw.EdgeInsets.all(12),
-            decoration: pw.BoxDecoration(
-              color: PdfColors.grey200,
-              borderRadius: const pw.BorderRadius.only(
-                topLeft: pw.Radius.circular(8),
-                topRight: pw.Radius.circular(8),
+            decoration: const pw.BoxDecoration(
+              color: rojoMuni,
+              borderRadius: pw.BorderRadius.only(
+                topLeft: pw.Radius.circular(7), // Radio ajustado para el borde
+                topRight: pw.Radius.circular(7),
               ),
             ),
-            child: pw.Text(title, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+            child: pw.Text(
+              title,
+              style: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 14,
+                color: PdfColors.white,
+              ),
+            ),
           ),
           pw.Padding(
             padding: const pw.EdgeInsets.all(12),
@@ -129,5 +175,5 @@ class PDFService {
     );
   }
 
-  static Future generatePDFBytes(BoletaModel boletaTemporal) async {}
+  // Función vacía eliminada para mayor claridad
 }
