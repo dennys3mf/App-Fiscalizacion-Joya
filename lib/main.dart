@@ -33,7 +33,7 @@ void main() async {
     await FirebaseAppCheck.instance.activate(
       // IMPORTANTE: Recuerda obtener esta clave desde tu Consola de Firebase
       webProvider:
-          ReCaptchaEnterpriseProvider('6LcDm9ArAAAAAHoXpf-u8nPjKlkDT3u4Ggr4T5aT'),
+          ReCaptchaV3Provider('6LcDm9ArAAAAAHoXpf-u8nPjKlkDT3u4Ggr4T5aT'),
     );
   } else {
     // Android/iOS
