@@ -42,7 +42,10 @@ class RoleBasedRedirect extends StatelessWidget {
   Widget build(BuildContext context) {
     // Usamos un FutureBuilder para obtener el rol del usuario desde Firestore una sola vez
     return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get(const GetOptions(source: Source.serverAndCache)),
       builder: (context, userDocSnapshot) {
         // Mientras carga los datos del usuario
         if (userDocSnapshot.connectionState == ConnectionState.waiting) {
@@ -60,8 +63,12 @@ class RoleBasedRedirect extends StatelessWidget {
 
         // Obtenemos el rol del documento del usuario
         final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
+        // Soportar ambas claves: 'rol' (ES) y 'role' (EN). Normalizamos a minúsculas.
         final String userRole =
-            userData['role'] ?? 'inspector'; // Rol por defecto 'inspector'
+            ((userData['role'] ?? userData['rol']) ?? 'inspector')
+                .toString()
+                .toLowerCase()
+                .trim();
 
         // --- INICIO DE LA MODIFICACIÓN ---
         // 1. Imprimimos el rol que estamos leyendo para depurar.
