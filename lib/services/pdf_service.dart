@@ -1,11 +1,8 @@
 import 'package:intl/intl.dart';
-
-import 'dart:typed_data';
 import 'package:flutter/services.dart'; // <-- IMPORTANTE: Añade esta línea
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:intl/intl.dart';
 import '../models/boleta_model.dart';
 
 class PDFService {
@@ -33,12 +30,14 @@ class PDFService {
 
     await Printing.sharePdf(
       bytes: await pdf.save(),
-      filename: 'boleta_${boleta.placa}_${DateFormat('yyyyMMdd_HHmm').format(boleta.fecha)}.pdf',
+      filename:
+          'boleta_${boleta.placa}_${DateFormat('yyyyMMdd_HHmm').format(boleta.fecha)}.pdf',
     );
   }
 
   // --- 3. Actualizamos la función para que reciba el logo ---
-  static pw.Widget _buildPDFContent(BoletaModel boleta, pw.ImageProvider logoImage) {
+  static pw.Widget _buildPDFContent(
+      BoletaModel boleta, pw.ImageProvider logoImage) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
@@ -85,7 +84,7 @@ class PDFService {
           ),
         ),
         pw.SizedBox(height: 24),
-        
+
         // --- 5. Aplicamos el nuevo estilo a las secciones de datos ---
         _buildPDFSection(
           'DATOS DEL VEHÍCULO',
@@ -106,12 +105,16 @@ class PDFService {
         _buildPDFSection(
           'DETALLES DE LA FISCALIZACIÓN',
           [
-            ['Fecha y Hora:', DateFormat('dd/MM/yyyy HH:mm').format(boleta.fecha)],
+            [
+              'Fecha y Hora:',
+              DateFormat('dd/MM/yyyy HH:mm').format(boleta.fecha)
+            ],
             ['Inspector:', boleta.inspectorNombre ?? 'N/A'],
             ['Cód. Fiscalizador:', boleta.codigoFiscalizador],
             ['Motivo:', boleta.motivo],
             ['Conforme:', boleta.conforme],
-            if (boleta.observaciones != null && boleta.observaciones!.isNotEmpty)
+            if (boleta.observaciones != null &&
+                boleta.observaciones!.isNotEmpty)
               ['Observaciones:', boleta.observaciones!],
           ],
         ),
@@ -159,7 +162,9 @@ class PDFService {
                     children: [
                       pw.SizedBox(
                         width: 120,
-                        child: pw.Text(row[0], style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        child: pw.Text(row[0],
+                            style:
+                                pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                       ),
                       pw.Expanded(
                         child: pw.Text(row[1]),

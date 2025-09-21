@@ -1,6 +1,6 @@
 import 'package:app_fiscalizacion/screens/dashboard_screen.dart';
 import 'package:app_fiscalizacion/screens/login_screen.dart';
-import 'package:app_fiscalizacion/screens/manager_dashboard_screen.dart';
+import 'package:app_fiscalizacion/screens/admin_dashboard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -79,7 +79,9 @@ class RoleBasedRedirect extends StatelessWidget {
         // 1. SI ESTAMOS EN LA WEB
         if (kIsWeb) {
           if (userRole == 'gerente') {
-            return ManagerDashboardScreen(); // ¡Bienvenido al panel de Gerente!
+            // En web usamos el dashboard respaldado por Cloud Functions
+            // para evitar problemas de permisos de Firestore en cliente.
+            return AdminDashboardScreen(onBack: () {});
           } else {
             // --- INICIO DE LA MODIFICACIÓN ---
             // 2. Imprimimos por qué estamos denegando el acceso.

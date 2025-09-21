@@ -71,7 +71,7 @@ class _HistorialScreenState extends State<HistorialScreen>
         color = Colors.grey.shade800;
         bgColor = Colors.grey.shade50;
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -85,15 +85,12 @@ class _HistorialScreenState extends State<HistorialScreen>
           const SizedBox(width: 4),
           Text(
             conforme,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: color),
           ),
         ],
       ),
     );
-  }
-
-  String _formatDate(DateTime date) {
-    return DateFormat('dd/MM/yy').format(date);
   }
 
   String _formatDateTime(DateTime date) {
@@ -121,8 +118,15 @@ class _HistorialScreenState extends State<HistorialScreen>
                 children: [
                   const Icon(Icons.description, color: Colors.white, size: 24),
                   const SizedBox(width: 12),
-                  const Expanded(child: Text('Detalles de Boleta', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold))),
-                  IconButton(onPressed: () => Navigator.of(context).pop(), icon: const Icon(Icons.close, color: Colors.white)),
+                  const Expanded(
+                      child: Text('Detalles de Boleta',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold))),
+                  IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white)),
                 ],
               ),
             ),
@@ -132,18 +136,34 @@ class _HistorialScreenState extends State<HistorialScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildDetailSection('Información del Vehículo', Icons.directions_car, [_buildDetailRow('Placa', boleta.placa.toUpperCase()), _buildDetailRow('Empresa', boleta.empresa)]),
+                    _buildDetailSection(
+                        'Información del Vehículo', Icons.directions_car, [
+                      _buildDetailRow('Placa', boleta.placa.toUpperCase()),
+                      _buildDetailRow('Empresa', boleta.empresa)
+                    ]),
                     const SizedBox(height: 24),
-                    _buildDetailSection('Información del Conductor', Icons.person, [_buildDetailRow('Conductor', boleta.conductor), _buildDetailRow('N° Licencia', boleta.numeroLicencia)]),
+                    _buildDetailSection(
+                        'Información del Conductor', Icons.person, [
+                      _buildDetailRow('Conductor', boleta.conductor),
+                      _buildDetailRow('N° Licencia', boleta.numeroLicencia)
+                    ]),
                     const SizedBox(height: 24),
-                    _buildDetailSection('Detalles de Fiscalización', Icons.assignment, [
-                      _buildDetailRow('Fecha y Hora', _formatDateTime(boleta.fecha)),
-                      _buildDetailRow('Inspector', boleta.inspectorNombre ?? boleta.codigoFiscalizador),
-                      _buildDetailRow('Cód. Fiscalizador', boleta.codigoFiscalizador),
+                    _buildDetailSection(
+                        'Detalles de Fiscalización', Icons.assignment, [
+                      _buildDetailRow(
+                          'Fecha y Hora', _formatDateTime(boleta.fecha)),
+                      _buildDetailRow('Inspector',
+                          boleta.inspectorNombre ?? boleta.codigoFiscalizador),
+                      _buildDetailRow(
+                          'Cód. Fiscalizador', boleta.codigoFiscalizador),
                       _buildDetailRow('Motivo', boleta.motivo),
                       _buildConformeRow('Conforme', boleta.conforme),
-                      if (boleta.descripciones != null && boleta.descripciones!.isNotEmpty) _buildDetailRow('Descripciones', boleta.descripciones!),
-                      if (boleta.observaciones != null && boleta.observaciones!.isNotEmpty) _buildDetailRow('Observaciones', boleta.observaciones!),
+                      if (boleta.descripciones != null &&
+                          boleta.descripciones!.isNotEmpty)
+                        _buildDetailRow('Descripciones', boleta.descripciones!),
+                      if (boleta.observaciones != null &&
+                          boleta.observaciones!.isNotEmpty)
+                        _buildDetailRow('Observaciones', boleta.observaciones!),
                     ]),
                   ],
                 ),
@@ -156,10 +176,12 @@ class _HistorialScreenState extends State<HistorialScreen>
                   Expanded(
                     child: OutlinedButton.icon(
                       onPressed: () async {
-                         try {
+                        try {
                           await PDFService.generateAndSharePDF(boleta);
                         } catch (e) {
-                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al generar PDF: $e'), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Error al generar PDF: $e'),
+                              backgroundColor: Colors.red));
                         }
                       },
                       icon: const Icon(Icons.picture_as_pdf),
@@ -170,11 +192,16 @@ class _HistorialScreenState extends State<HistorialScreen>
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: () async {
-                         try {
+                        try {
                           await PrintService.printBoleta(boleta);
-                           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enviando a la impresora...'), backgroundColor: Colors.blue));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Enviando a la impresora...'),
+                                  backgroundColor: Colors.blue));
                         } catch (e) {
-                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al imprimir: $e'), backgroundColor: Colors.red));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Error al imprimir: $e'),
+                              backgroundColor: Colors.red));
                         }
                       },
                       icon: const Icon(Icons.print),
@@ -190,17 +217,24 @@ class _HistorialScreenState extends State<HistorialScreen>
     );
   }
 
-  Widget _buildDetailSection(String title, IconData icon, List<Widget> children) {
+  Widget _buildDetailSection(
+      String title, IconData icon, List<Widget> children) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
           Icon(icon, color: AppTheme.primaryRed, size: 18),
           const SizedBox(width: 8),
-          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppTheme.foregroundDark)),
+          Text(title,
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.foregroundDark)),
         ]),
         const SizedBox(height: 12),
-        Padding(padding: const EdgeInsets.only(left: 26), child: Column(children: children)),
+        Padding(
+            padding: const EdgeInsets.only(left: 26),
+            child: Column(children: children)),
       ],
     );
   }
@@ -209,17 +243,30 @@ class _HistorialScreenState extends State<HistorialScreen>
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 100, child: Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.mutedForeground))),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppTheme.foregroundDark))),
+        SizedBox(
+            width: 100,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 14, color: AppTheme.mutedForeground))),
+        Expanded(
+            child: Text(value,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.foregroundDark))),
       ]),
     );
   }
 
-    Widget _buildConformeRow(String label, String value) {
+  Widget _buildConformeRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 100, child: Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.mutedForeground))),
+        SizedBox(
+            width: 100,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 14, color: AppTheme.mutedForeground))),
         _getConformeWidget(value),
       ]),
     );
@@ -240,21 +287,36 @@ class _HistorialScreenState extends State<HistorialScreen>
               Container(
                   width: 50,
                   height: 50,
-                  decoration: BoxDecoration(gradient: AppTheme.primaryGradient, borderRadius: BorderRadius.circular(16)),
-                  child: Center(child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
+                  decoration: BoxDecoration(
+                      gradient: AppTheme.primaryGradient,
+                      borderRadius: BorderRadius.circular(16)),
+                  child: Center(
+                      child: Text('${index + 1}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16)))),
               const SizedBox(width: 16),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Text('Placa: ${boleta.placa.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(width: 12),
-                    _getConformeWidget(boleta.conforme),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(boleta.empresa, style: const TextStyle(color: AppTheme.mutedForeground, fontSize: 14), overflow: TextOverflow.ellipsis),
-                ]),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Text('Placa: ${boleta.placa.toUpperCase()}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(width: 12),
+                        _getConformeWidget(boleta.conforme),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(boleta.empresa,
+                          style: const TextStyle(
+                              color: AppTheme.mutedForeground, fontSize: 14),
+                          overflow: TextOverflow.ellipsis),
+                    ]),
               ),
-              const Icon(Icons.visibility_outlined, size: 20, color: AppTheme.mutedForeground),
+              const Icon(Icons.visibility_outlined,
+                  size: 20, color: AppTheme.mutedForeground),
             ],
           ),
         ),
@@ -266,26 +328,31 @@ class _HistorialScreenState extends State<HistorialScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
+        leading: IconButton(
+            onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
         title: const Text('Historial de Boletas'),
         actions: [
           IconButton(
             onPressed: _refreshData,
             icon: AnimatedBuilder(
               animation: _refreshAnimationController,
-              builder: (context, child) => Transform.rotate(angle: _refreshAnimationController.value * 2 * 3.14159, child: const Icon(Icons.refresh)),
+              builder: (context, child) => Transform.rotate(
+                  angle: _refreshAnimationController.value * 2 * 3.14159,
+                  child: const Icon(Icons.refresh)),
             ),
           ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60.0),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
             child: TextField(
               controller: _searchController,
               // --- CAMBIO SUGERIDO ---
               // Usamos toUpperCase para que la búsqueda en Firestore funcione correctamente
-              onChanged: (value) => setState(() => _searchTerm = value.toUpperCase()),
+              onChanged: (value) =>
+                  setState(() => _searchTerm = value.toUpperCase()),
               decoration: const InputDecoration(
                 hintText: 'Buscar por placa...',
                 prefixIcon: Icon(Icons.search),
@@ -311,7 +378,8 @@ class _HistorialScreenState extends State<HistorialScreen>
                   .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator(color: AppTheme.primaryRed));
+              return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primaryRed));
             }
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return const Center(child: Text('No se encontraron boletas.'));
@@ -320,7 +388,8 @@ class _HistorialScreenState extends State<HistorialScreen>
             // La lógica de filtrado `.where(...)` que estaba aquí se ha eliminado.
             // Los datos ya vienen filtrados desde Firestore.
             final boletas = snapshot.data!.docs
-                .map((doc) => BoletaModel.fromMap({'id': doc.id, ...doc.data() as Map<String, dynamic>}))
+                .map((doc) => BoletaModel.fromMap(
+                    {'id': doc.id, ...doc.data() as Map<String, dynamic>}))
                 .toList();
 
             // Re-ordenamos por fecha después de la búsqueda (opcional pero recomendado)
@@ -331,7 +400,8 @@ class _HistorialScreenState extends State<HistorialScreen>
             return ListView.builder(
               padding: const EdgeInsets.all(16),
               itemCount: boletas.length,
-              itemBuilder: (context, index) => _buildBoletaCard(boletas[index], index),
+              itemBuilder: (context, index) =>
+                  _buildBoletaCard(boletas[index], index),
             );
           },
         ),
