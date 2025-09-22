@@ -346,10 +346,16 @@ export const getDashboardData = onCall(
     }
 
     try {
-      const [boletasSnapshot, usersSnapshot] = await Promise.all([
-        db.collection("boletas").orderBy("fecha", "desc").get(),
-        db.collection("users").get(),
-      ]);
+      // Fetch users normally
+      const usersSnapshot = await db.collection("users").get();
+
+      // Try to order boletas by fecha; if it fails due to mixed types, fallback without orderBy
+      let boletasSnapshot: FirebaseFirestore.QuerySnapshot;
+      try {
+        boletasSnapshot = await db.collection("boletas").orderBy("fecha", "desc").get();
+      } catch (e) {
+        boletasSnapshot = await db.collection("boletas").get();
+      }
 
       const boletas: Boleta[] = boletasSnapshot.docs.map((doc) => ({
         id: doc.id,
@@ -360,11 +366,28 @@ export const getDashboardData = onCall(
         ...(doc.data() as FirebaseFirestore.DocumentData),
       })) as UserDoc[];
 
-      // Calcular KPIs
+      // Calcular KPIs (normalizando valores)
+      const norm = (v?: string) => (v || '').trim().toLowerCase();
       const totalMultas = boletas.reduce((sum, b) => sum + (b.multa || 0), 0);
-      const totalConformes = boletas.filter((b) => b.conforme === "Sí").length;
-      const totalNoConformes = boletas.filter((b) => b.conforme === "No").length;
-      const totalParciales = boletas.filter((b) => b.conforme === "Parcialmente").length;
+      const totalConformes = boletas.filter((b) => {
+        const n = norm(b.conforme as any);
+        return n === 'sí' || n === 'si';
+      }).length;
+      const totalNoConformes = boletas.filter((b) => norm(b.conforme as any) === 'no').length;
+      const totalParciales = boletas.filter((b) => norm(b.conforme as any).startsWith('parcial')).length;
+      const multasConMonto = boletas.filter((b) => (b.multa || 0) > 0).length;
+
+      const estados = boletas.reduce((acc, b) => {
+        const e = norm((b as any).estado);
+        if (e === 'activa' || e === 'activo') acc.activa++;
+        else if (e === 'pagada' || e === 'pagado') acc.pagada++;
+        else if (e === 'anulada' || e === 'anulado') acc.anulada++;
+        return acc;
+      }, { activa: 0, pagada: 0, anulada: 0 } as {activa: number; pagada: number; anulada: number});
+
+      const promedioMulta = multasConMonto > 0 ? totalMultas / multasConMonto : 0;
+      const multasActivas = estados.activa;
+      const multasPagadas = estados.pagada;
       
       const inspectores = users
         .filter((u) => u.rol === "inspector")
@@ -372,25 +395,56 @@ export const getDashboardData = onCall(
           const inspectorKey = inspector.uid || inspector.id;
           const susBoletas = boletas.filter((b) => b.inspectorId === inspectorKey);
           const ultima = susBoletas.length > 0 ? toMillis(susBoletas[0].fecha) : null;
+
+          // Normalize conformity counts
+          const norm = (v?: string) => (v || '').trim().toLowerCase();
+          const conformes = susBoletas.filter((b) => {
+            const n = norm(b.conforme as any);
+            return n === 'sí' || n === 'si';
+          }).length;
+          const noConformes = susBoletas.filter((b) => norm(b.conforme as any) === 'no').length;
+
+          // Only return JSON-safe subset of inspector fields
           return {
-            ...inspector,
+            id: inspector.id,
+            uid: inspector.uid || inspector.id,
+            nombreCompleto: (inspector as any).nombreCompleto || '',
+            email: (inspector as any).email || '',
+            codigoFiscalizador: (inspector as any).codigoFiscalizador || '',
+            telefono: (inspector as any).telefono || '',
+            estado: (inspector as any).estado || '',
+            rol: (inspector as any).rol || '',
+            createdAtMillis: toMillis((inspector as any).createdAt),
             boletas: susBoletas.length,
-            conformes: susBoletas.filter((b) => b.conforme === "Sí").length,
-            noConformes: susBoletas.filter((b) => b.conforme === "No").length,
+            conformes,
+            noConformes,
             ultimaActividad: ultima,
           };
         });
 
+      // Ensure boletasRecientes are JSON-safe and sorted by millis desc
+      const sortedBoletas = [...boletas].sort((a, b) => (toMillis(b.fecha) || 0) - (toMillis(a.fecha) || 0));
       return {
         totalBoletas: boletas.length,
         totalConformes,
         totalNoConformes,
         totalParciales,
         totalMultas,
+        multasConMonto,
+        promedioMulta,
+        estados,
+        multasActivas,
+        multasPagadas,
         inspectoresActivos: inspectores.filter((i) => i.estado === "Activo").length,
         totalInspectores: inspectores.length,
-        boletasRecientes: boletas.slice(0, 5).map((b) => ({
-          ...b,
+        boletasRecientes: sortedBoletas.slice(0, 5).map((b) => ({
+          id: b.id,
+          placa: (b as any).placa || '',
+          empresa: (b as any).empresa || '',
+          nombreConductor: (b as any).nombreConductor || (b as any).conductor || '',
+          inspectorNombre: (b as any).inspectorNombre || '',
+          estado: (b as any).estado || '',
+          multa: b.multa || 0,
           fecha: toMillis(b.fecha),
         })),
         inspectores,
@@ -400,4 +454,312 @@ export const getDashboardData = onCall(
       throw new HttpsError("internal", "No se pudieron cargar los datos del dashboard.");
     }
   },
+);
+
+// Lista de boletas con filtros simples para el panel web (evita leer Firestore desde el cliente)
+export const listBoletas = onCall(
+  { region: "southamerica-west1" },
+  async (request) => {
+    if (!request.auth || (await db.collection("users").doc(request.auth.uid).get()).data()?.rol !== "gerente") {
+      throw new HttpsError("permission-denied", "Acceso denegado.");
+    }
+
+    try {
+      const { limit = 200, withPhotos = false } = (request.data || {}) as { limit?: number; withPhotos?: boolean };
+      const safeLimit = Math.max(1, Math.min(1000, Number(limit) || 200));
+
+      // Intentar ordenar por 'fecha' si el campo es consistente; si falla, hacer fallback sin orderBy
+      let snap: FirebaseFirestore.QuerySnapshot;
+      try {
+        const q = db.collection("boletas").orderBy("fecha", "desc").limit(safeLimit);
+        snap = await q.get();
+      } catch (e) {
+        const q = db.collection("boletas").limit(safeLimit);
+        snap = await q.get();
+      }
+      type Loose = { [k: string]: any };
+      const rawItems: Loose[] = snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as FirebaseFirestore.DocumentData) }));
+
+      // Sanitize each item to JSON-safe fields only
+      const sanitized = rawItems.map((m) => {
+        const placa = (m["placa"]) || "";
+        const empresa = (m["empresa"]) || "";
+        const conductor = m["conductor"] || m["nombreConductor"] || "";
+        const numeroLicencia = (m["numeroLicencia"]) || "";
+        const conforme = (m["conforme"]) || "";
+        const estado = (m["estado"]) || "";
+        const multaVal = typeof m["multa"] === 'number' ? m["multa"] : 0;
+        const motivo = m["motivo"] || m["infraccion"] || "";
+        const inspectorId = m["inspectorId"] || "";
+        const inspectorNombre = m["inspectorNombre"] || "";
+        const inspectorEmail = m["inspectorEmail"] || "";
+        const codigoFiscalizador = m["codigoFiscalizador"] || "";
+        const foto = m["fotoLicencia"] || m["urlFotoLicencia"] || "";
+        const urlFoto = m["urlFotoLicencia"] || m["fotoLicencia"] || "";
+        const descripciones = (typeof m["descripciones"] === 'string') ? m["descripciones"] : undefined;
+        const observaciones = (typeof m["observaciones"] === 'string') ? m["observaciones"] : undefined;
+        const fechaMillis = toMillis(m["fecha"]);
+
+        return {
+          id: m.id,
+          placa,
+          empresa,
+          conductor,
+          nombreConductor: conductor,
+          numeroLicencia,
+          conforme,
+          estado,
+          multa: multaVal,
+          motivo,
+          inspectorId,
+          inspectorNombre,
+          inspectorEmail,
+          codigoFiscalizador,
+          fotoLicencia: foto,
+          urlFotoLicencia: urlFoto,
+          descripciones,
+          observaciones,
+          fecha: fechaMillis,
+        } as Loose;
+      });
+
+      const filtered = withPhotos
+        ? sanitized.filter((m) => !!(m["fotoLicencia"] || m["urlFotoLicencia"]))
+        : sanitized;
+
+      const sorted = filtered.sort((a, b) => ((b["fecha"] || 0) as number) - ((a["fecha"] || 0) as number));
+
+      return { items: sorted };
+    } catch (error) {
+      console.error("Error en listBoletas:", error);
+      throw new HttpsError("internal", "No se pudieron listar las boletas.");
+    }
+  },
+);
+
+// HTTP variant with explicit CORS for web environments that face CORS issues with callable protocol
+export const listBoletasHttp = onRequest(
+  { region: "southamerica-west1" },
+  async (req: Request, res: Response) => {
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    try {
+      // Verify ID token from Authorization: Bearer <token>
+      const authHeader = (req.headers["authorization"] || req.headers["Authorization"]) as string | undefined;
+      const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : undefined;
+      if (!token) {
+        res.status(401).json({ error: "unauthenticated" });
+        return;
+      }
+      const decoded = await admin.auth().verifyIdToken(token);
+      const uid = decoded.uid;
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (!userDoc.exists || userDoc.data()?.rol !== "gerente") {
+        res.status(403).json({ error: "permission-denied" });
+        return;
+      }
+
+      const limitParam = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+  const withPhotosParam = Array.isArray(req.query.withPhotos) ? req.query.withPhotos[0] : req.query.withPhotos;
+  const limit = Math.max(1, Math.min(1000, Number(limitParam) || 200));
+  const withPhotos = (typeof withPhotosParam === 'string') ? (withPhotosParam === 'true') : false;
+
+      // Fetch boletas with fallback order
+      let snap: FirebaseFirestore.QuerySnapshot;
+      try {
+        snap = await db.collection("boletas").orderBy("fecha", "desc").limit(limit).get();
+      } catch {
+        snap = await db.collection("boletas").limit(limit).get();
+      }
+
+      type Loose = { [k: string]: any };
+      const rawItems: Loose[] = snap.docs.map((doc) => ({ id: doc.id, ...(doc.data() as FirebaseFirestore.DocumentData) }));
+      const sanitized = rawItems.map((m) => {
+        const placa = m["placa"] || "";
+        const empresa = m["empresa"] || "";
+        const conductor = m["conductor"] || m["nombreConductor"] || "";
+        const numeroLicencia = m["numeroLicencia"] || "";
+        const conforme = m["conforme"] || "";
+        const estado = m["estado"] || "";
+        const multaVal = typeof m["multa"] === 'number' ? m["multa"] : 0;
+        const motivo = m["motivo"] || m["infraccion"] || "";
+        const inspectorId = m["inspectorId"] || "";
+        const inspectorNombre = m["inspectorNombre"] || "";
+        const inspectorEmail = m["inspectorEmail"] || "";
+        const codigoFiscalizador = m["codigoFiscalizador"] || "";
+        const foto = m["fotoLicencia"] || m["urlFotoLicencia"] || "";
+        const urlFoto = m["urlFotoLicencia"] || m["fotoLicencia"] || "";
+        const descripciones = typeof m["descripciones"] === 'string' ? m["descripciones"] : undefined;
+        const observaciones = typeof m["observaciones"] === 'string' ? m["observaciones"] : undefined;
+        const fechaMillis = toMillis(m["fecha"]);
+        return {
+          id: m.id,
+          placa,
+          empresa,
+          conductor,
+          nombreConductor: conductor,
+          numeroLicencia,
+          conforme,
+          estado,
+          multa: multaVal,
+          motivo,
+          inspectorId,
+          inspectorNombre,
+          inspectorEmail,
+          codigoFiscalizador,
+          fotoLicencia: foto,
+          urlFotoLicencia: urlFoto,
+          descripciones,
+          observaciones,
+          fecha: fechaMillis,
+        } as Loose;
+      });
+
+      const filtered = withPhotos
+        ? sanitized.filter((m) => !!(m["fotoLicencia"] || m["urlFotoLicencia"]))
+        : sanitized;
+      const sorted = filtered.sort((a, b) => ((b["fecha"] || 0) as number) - ((a["fecha"] || 0) as number));
+
+      res.status(200).json({ items: sorted });
+    } catch (error) {
+      console.error("Error en listBoletasHttp:", error);
+      res.status(500).json({ error: "internal" });
+    }
+  }
+);
+
+// HTTP variant for dashboard metrics with explicit CORS
+export const getDashboardDataHttp = onRequest(
+  { region: "southamerica-west1" },
+  async (req: Request, res: Response) => {
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      res.status(204).send("");
+      return;
+    }
+
+    try {
+      // Verify ID token
+      const authHeader = (req.headers["authorization"] || req.headers["Authorization"]) as string | undefined;
+      const token = authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : undefined;
+      if (!token) {
+        res.status(401).json({ error: "unauthenticated" });
+        return;
+      }
+      const decoded = await admin.auth().verifyIdToken(token);
+      const uid = decoded.uid;
+      const userDoc = await db.collection("users").doc(uid).get();
+      if (!userDoc.exists || userDoc.data()?.rol !== "gerente") {
+        res.status(403).json({ error: "permission-denied" });
+        return;
+      }
+
+      // Fetch users and boletas with fallback order
+      const usersSnapshot = await db.collection("users").get();
+      let boletasSnapshot: FirebaseFirestore.QuerySnapshot;
+      try {
+        boletasSnapshot = await db.collection("boletas").orderBy("fecha", "desc").get();
+      } catch {
+        boletasSnapshot = await db.collection("boletas").get();
+      }
+
+      const boletas: Boleta[] = boletasSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as FirebaseFirestore.DocumentData),
+      })) as Boleta[];
+      const users: UserDoc[] = usersSnapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as FirebaseFirestore.DocumentData),
+      })) as UserDoc[];
+
+      const norm = (v?: string) => (v || '').trim().toLowerCase();
+      const totalMultas = boletas.reduce((sum, b) => sum + (b.multa || 0), 0);
+      const totalConformes = boletas.filter((b) => {
+        const n = norm(b.conforme as any);
+        return n === 'sí' || n === 'si';
+      }).length;
+      const totalNoConformes = boletas.filter((b) => norm(b.conforme as any) === 'no').length;
+      const totalParciales = boletas.filter((b) => norm(b.conforme as any).startsWith('parcial')).length;
+      const multasConMonto = boletas.filter((b) => (b.multa || 0) > 0).length;
+      const estados = boletas.reduce((acc, b) => {
+        const e = norm((b as any).estado);
+        if (e === 'activa' || e === 'activo') acc.activa++;
+        else if (e === 'pagada' || e === 'pagado') acc.pagada++;
+        else if (e === 'anulada' || e === 'anulado') acc.anulada++;
+        return acc;
+      }, { activa: 0, pagada: 0, anulada: 0 } as {activa: number; pagada: number; anulada: number});
+      const promedioMulta = multasConMonto > 0 ? totalMultas / multasConMonto : 0;
+      const multasActivas = estados.activa;
+      const multasPagadas = estados.pagada;
+
+      const inspectores = users
+        .filter((u) => u.rol === "inspector")
+        .map((inspector) => {
+          const inspectorKey = inspector.uid || inspector.id;
+          const susBoletas = boletas.filter((b) => b.inspectorId === inspectorKey);
+          const ultima = susBoletas.length > 0 ? toMillis(susBoletas[0].fecha) : null;
+          const conformes = susBoletas.filter((b) => {
+            const n = norm(b.conforme as any);
+            return n === 'sí' || n === 'si';
+          }).length;
+          const noConformes = susBoletas.filter((b) => norm(b.conforme as any) === 'no').length;
+          return {
+            id: inspector.id,
+            uid: inspector.uid || inspector.id,
+            nombreCompleto: (inspector as any).nombreCompleto || '',
+            email: (inspector as any).email || '',
+            codigoFiscalizador: (inspector as any).codigoFiscalizador || '',
+            telefono: (inspector as any).telefono || '',
+            estado: (inspector as any).estado || '',
+            rol: (inspector as any).rol || '',
+            createdAtMillis: toMillis((inspector as any).createdAt),
+            boletas: susBoletas.length,
+            conformes,
+            noConformes,
+            ultimaActividad: ultima,
+          };
+        });
+
+      const sortedBoletas = [...boletas].sort((a, b) => (toMillis(b.fecha) || 0) - (toMillis(a.fecha) || 0));
+
+      res.status(200).json({
+        totalBoletas: boletas.length,
+        totalConformes,
+        totalNoConformes,
+        totalParciales,
+        totalMultas,
+        multasConMonto,
+        promedioMulta,
+        estados,
+        multasActivas,
+        multasPagadas,
+        inspectoresActivos: inspectores.filter((i) => i.estado === "Activo").length,
+        totalInspectores: inspectores.length,
+        boletasRecientes: sortedBoletas.slice(0, 5).map((b) => ({
+          id: b.id,
+          placa: (b as any).placa || '',
+          empresa: (b as any).empresa || '',
+          nombreConductor: (b as any).nombreConductor || (b as any).conductor || '',
+          inspectorNombre: (b as any).inspectorNombre || '',
+          estado: (b as any).estado || '',
+          multa: b.multa || 0,
+          fecha: toMillis(b.fecha),
+        })),
+        inspectores,
+      });
+    } catch (error) {
+      console.error("Error en getDashboardDataHttp:", error);
+      res.status(500).json({ error: "internal" });
+    }
+  }
 );

@@ -8,7 +8,7 @@ class HomeScreen extends StatefulWidget { // <-- MEJORA: Convertido a StatefulWi
   final void Function(String) onNavigate;
   final String username; // Este campo ya no es tan necesario, pero lo mantenemos por compatibilidad
 
-  const HomeScreen({super.key, required this.onNavigate, required this.username});
+  const HomeScreen({super.key, required this.onNavigate, required this.username, required Null Function() onBack});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();

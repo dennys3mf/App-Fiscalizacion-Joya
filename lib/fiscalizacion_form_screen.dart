@@ -311,7 +311,15 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
             child: Icon(icon, color: AppTheme.primaryRed),
           ),
           const SizedBox(width: 16),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          Expanded(
+            child: Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+            ),
+          ),
         ],
       ),
     );

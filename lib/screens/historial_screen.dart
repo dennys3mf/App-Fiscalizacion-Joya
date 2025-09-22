@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/boleta_model.dart';
@@ -43,6 +48,51 @@ class _HistorialScreenState extends State<HistorialScreen>
     await Future.delayed(const Duration(seconds: 1));
   }
 
+  // Para Web: cargar boletas desde Cloud Functions (evita lecturas directas y problemas de reglas/App Check)
+  Future<List<BoletaModel>> _loadBoletasCF() async {
+    // Prefer HTTP variant with CORS to avoid preflight/callable issues
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final token = await user?.getIdToken();
+      if (token != null) {
+        final uri = Uri.parse(
+            'https://southamerica-west1-app-fiscalizacion-joya.cloudfunctions.net/listBoletasHttp?limit=500');
+        final resp = await http.get(uri, headers: {
+          'Authorization': 'Bearer $token',
+        });
+        if (resp.statusCode == 200) {
+          final data =
+              Map<String, dynamic>.from(await compute(_parseJson, resp.body));
+          final items = (data['items'] as List<dynamic>? ?? [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          return items.map((m) => BoletaModel.fromMap(m)).toList();
+        } else {
+          throw Exception('HTTP ${resp.statusCode}: ${resp.body}');
+        }
+      }
+    } catch (_) {
+      // fallback to callable
+    }
+
+    final fn = FirebaseFunctions.instanceFor(region: 'southamerica-west1')
+        .httpsCallable('listBoletas');
+    final res = await fn.call<Map<String, dynamic>>({'limit': 500});
+    final items = (res.data['items'] as List<dynamic>? ?? [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    return items.map((m) => BoletaModel.fromMap(m)).toList();
+  }
+
+// Parse JSON off main isolate for large payloads
+  Map<String, dynamic> _parseJson(String src) {
+    if (src.isEmpty) return <String, dynamic>{};
+    final decoded = jsonDecode(src);
+    return decoded is Map<String, dynamic>
+        ? decoded
+        : Map<String, dynamic>.from(decoded as Map);
+  }
+
   // --- Widgets de UI (sin cambios en esta sección) ---
 
   Widget _getConformeWidget(String conforme) {
@@ -50,26 +100,23 @@ class _HistorialScreenState extends State<HistorialScreen>
     Color color;
     Color bgColor;
 
-    switch (conforme.toLowerCase()) {
-      case 'sí':
-        iconData = Icons.check_circle;
-        color = Colors.green.shade800;
-        bgColor = Colors.green.shade50;
-        break;
-      case 'no':
-        iconData = Icons.cancel;
-        color = Colors.red.shade800;
-        bgColor = Colors.red.shade50;
-        break;
-      case 'parcialmente':
-        iconData = Icons.warning;
-        color = Colors.orange.shade800;
-        bgColor = Colors.orange.shade50;
-        break;
-      default:
-        iconData = Icons.help;
-        color = Colors.grey.shade800;
-        bgColor = Colors.grey.shade50;
+    final n = (conforme).trim().toLowerCase();
+    if (n == 'sí' || n == 'si') {
+      iconData = Icons.check_circle;
+      color = Colors.green.shade800;
+      bgColor = Colors.green.shade50;
+    } else if (n == 'no') {
+      iconData = Icons.cancel;
+      color = Colors.red.shade800;
+      bgColor = Colors.red.shade50;
+    } else if (n.startsWith('parcial')) {
+      iconData = Icons.warning;
+      color = Colors.orange.shade800;
+      bgColor = Colors.orange.shade50;
+    } else {
+      iconData = Icons.help;
+      color = Colors.grey.shade800;
+      bgColor = Colors.grey.shade50;
     }
 
     return Container(
@@ -363,49 +410,84 @@ class _HistorialScreenState extends State<HistorialScreen>
       ),
       body: Container(
         decoration: const BoxDecoration(gradient: AppTheme.backgroundGradient),
-        // ================== INICIO DE LA MEJORA ==================
-        child: StreamBuilder<QuerySnapshot>(
-          stream: _searchTerm.isEmpty
-              ? FirebaseFirestore.instance
-                  .collection('boletas')
-                  .orderBy('fecha', descending: true)
-                  .snapshots()
-              : FirebaseFirestore.instance
-                  .collection('boletas')
-                  .where('placa', isGreaterThanOrEqualTo: _searchTerm)
-                  .where('placa', isLessThanOrEqualTo: '$_searchTerm\uf8ff')
-                  .orderBy('placa')
-                  .snapshots(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: CircularProgressIndicator(color: AppTheme.primaryRed));
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Center(child: Text('No se encontraron boletas.'));
-            }
+        child: kIsWeb
+            // Web: usar Cloud Functions
+            ? FutureBuilder<List<BoletaModel>>(
+                future: _loadBoletasCF(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: AppTheme.primaryRed));
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
+                        child: Text(
+                            'Error cargando boletas (CF):\n${snapshot.error}'));
+                  }
+                  final list = snapshot.data ?? const <BoletaModel>[];
+                  if (list.isEmpty) {
+                    return const Center(
+                        child: Text('No se encontraron boletas.'));
+                  }
+                  final s = _searchTerm.toLowerCase();
+                  final filtered = list.where((b) {
+                    if (s.isEmpty) return true;
+                    return b.placa.toLowerCase().contains(s) ||
+                        b.empresa.toLowerCase().contains(s) ||
+                        b.conductor.toLowerCase().contains(s);
+                  }).toList()
+                    ..sort((a, b) => b.fecha.compareTo(a.fecha));
 
-            // La lógica de filtrado `.where(...)` que estaba aquí se ha eliminado.
-            // Los datos ya vienen filtrados desde Firestore.
-            final boletas = snapshot.data!.docs
-                .map((doc) => BoletaModel.fromMap(
-                    {'id': doc.id, ...doc.data() as Map<String, dynamic>}))
-                .toList();
-
-            // Re-ordenamos por fecha después de la búsqueda (opcional pero recomendado)
-            if (_searchTerm.isNotEmpty) {
-              boletas.sort((a, b) => b.fecha.compareTo(a.fecha));
-            }
-
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: boletas.length,
-              itemBuilder: (context, index) =>
-                  _buildBoletaCard(boletas[index], index),
-            );
-          },
-        ),
-        // =================== FIN DE LA MEJORA ===================
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) =>
+                        _buildBoletaCard(filtered[index], index),
+                  );
+                },
+              )
+            // Mobile/Desktop: mantener lectura directa de Firestore
+            : StreamBuilder<QuerySnapshot>(
+                stream: _searchTerm.isEmpty
+                    ? FirebaseFirestore.instance
+                        .collection('boletas')
+                        .orderBy('fecha', descending: true)
+                        .snapshots()
+                    : FirebaseFirestore.instance
+                        .collection('boletas')
+                        .where('placa', isGreaterThanOrEqualTo: _searchTerm)
+                        .where('placa',
+                            isLessThanOrEqualTo: '$_searchTerm\uf8ff')
+                        .orderBy('placa')
+                        .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator(
+                            color: AppTheme.primaryRed));
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(
+                        child: Text('No se encontraron boletas.'));
+                  }
+                  final boletas = snapshot.data!.docs
+                      .map((doc) => BoletaModel.fromMap({
+                            'id': doc.id,
+                            ...doc.data() as Map<String, dynamic>
+                          }))
+                      .toList();
+                  if (_searchTerm.isNotEmpty) {
+                    boletas.sort((a, b) => b.fecha.compareTo(a.fecha));
+                  }
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: boletas.length,
+                    itemBuilder: (context, index) =>
+                        _buildBoletaCard(boletas[index], index),
+                  );
+                },
+              ),
       ),
     );
   }

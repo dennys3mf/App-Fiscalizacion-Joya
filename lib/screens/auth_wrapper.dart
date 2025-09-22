@@ -1,4 +1,5 @@
-import 'package:app_fiscalizacion/screens/dashboard_screen.dart';
+import 'package:app_fiscalizacion/fiscalizacion_form_screen.dart';
+import 'package:app_fiscalizacion/screens/home_screen.dart';
 import 'package:app_fiscalizacion/screens/login_screen.dart';
 import 'package:app_fiscalizacion/screens/admin_dashboard_screen.dart';
 import 'package:flutter/material.dart';
@@ -102,10 +103,10 @@ class RoleBasedRedirect extends StatelessWidget {
         else {
           if (userRole == 'inspector') {
             // Flujo normal para inspectores en móvil
-            return DashboardScreen(onBack: () {});
+            return HomeScreen(onBack: () {}, onNavigate: (String route) {}, username: '');
           } else {
             // Si un gerente usa la app móvil, lo mandamos al mismo dashboard
-            return DashboardScreen(onBack: () {});
+            return HomeScreen(onBack: () {}, onNavigate: (String route) {}, username: '');
           }
         }
       },

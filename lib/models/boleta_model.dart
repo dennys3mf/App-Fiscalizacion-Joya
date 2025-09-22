@@ -44,15 +44,28 @@ class BoletaModel {
   });
 
   factory BoletaModel.fromMap(Map<String, dynamic> map) {
+    DateTime parseFecha(dynamic v) {
+      if (v == null) return DateTime.now();
+      if (v is Timestamp) return v.toDate();
+      if (v is int) return DateTime.fromMillisecondsSinceEpoch(v);
+      if (v is String) {
+        final asInt = int.tryParse(v);
+        if (asInt != null) return DateTime.fromMillisecondsSinceEpoch(asInt);
+        final d = DateTime.tryParse(v);
+        if (d != null) return d;
+      }
+      return DateTime.now();
+    }
+
     return BoletaModel(
-      id: map['id'],
+      id: map['id'] ?? '',
       placa: map['placa'] ?? '',
       empresa: map['empresa'] ?? '',
       numeroLicencia: map['numeroLicencia'] ?? '',
-      // Corregimos el nombre del campo para que coincida con Firestore
-      conductor: map['nombreConductor'] ?? '',
+      // Aceptar 'conductor' o 'nombreConductor'
+      conductor: map['nombreConductor'] ?? map['conductor'] ?? '',
       codigoFiscalizador: map['codigoFiscalizador'] ?? '',
-      motivo: map['motivo'] ?? '',
+      motivo: map['motivo'] ?? map['infraccion'] ?? '',
       conforme: map['conforme'] ?? 'No especificado',
       descripciones: map['descripciones'],
       observaciones: map['observaciones'],
@@ -63,8 +76,9 @@ class BoletaModel {
       multa: (map['multa'] as num?)?.toDouble(),
       estado: map['estado'] ?? 'Activa',
       // --- FIN DE MEJORAS ---
-      fecha: (map['fecha'] as Timestamp).toDate(),
-      urlFotoLicencia: map['urlFotoLicencia'],
+      fecha: parseFecha(map['fecha']),
+      // Aceptar ambas variantes
+      urlFotoLicencia: map['urlFotoLicencia'] ?? map['fotoLicencia'],
     );
   }
 
@@ -110,6 +124,8 @@ class BoletaModel {
       inspectorId: inspectorId,
       inspectorEmail: inspectorEmail,
       inspectorNombre: inspectorNombre,
+      multa: multa,
+      estado: estado,
       fecha: fecha,
       urlFotoLicencia: urlFotoLicencia ?? this.urlFotoLicencia,
     );

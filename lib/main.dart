@@ -71,7 +71,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/home': (context) => HomeScreen(
               onNavigate: (route) => Navigator.pushNamed(context, route),
-              username: '',
+              username: '', onBack: () {  },
             ),
         '/fiscalizacion_form': (context) => FiscalizacionFormScreen(
               onBack: () => Navigator.pop(context),
