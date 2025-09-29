@@ -8,7 +8,7 @@ class BoletaModel {
   final String conductor;
   final String codigoFiscalizador;
   final String motivo;
-  final String conforme;
+  final String? conforme;
   final String? descripciones;
   final String? observaciones;
   final String inspectorId;
@@ -29,7 +29,7 @@ class BoletaModel {
     required this.conductor,
     required this.codigoFiscalizador,
     required this.motivo,
-    required this.conforme,
+    this.conforme,
     this.descripciones,
     this.observaciones,
     required this.inspectorId,
@@ -40,8 +40,14 @@ class BoletaModel {
     this.estado = 'Activa', // Valor por defecto 'Activa'
     // --- FIN DE MEJORAS ---
     required this.fecha,
-    this.urlFotoLicencia,
+    this.urlFotoLicencia, required String nombreConductor,
   });
+
+  factory BoletaModel.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> map = doc.data() as Map<String, dynamic>;
+    map["id"] = doc.id; // Aseguramos que el id del documento esté en el mapa
+    return BoletaModel.fromMap(map);
+  }
 
   factory BoletaModel.fromMap(Map<String, dynamic> map) {
     return BoletaModel(
@@ -49,11 +55,11 @@ class BoletaModel {
       placa: map['placa'] ?? '',
       empresa: map['empresa'] ?? '',
       numeroLicencia: map['numeroLicencia'] ?? '',
-      // Corregimos el nombre del campo para que coincida con Firestore
-      conductor: map['nombreConductor'] ?? '',
+      // ✅ CORREGIDO: Mapear correctamente el conductor desde Firestore
+      conductor: map['conductor'] ?? map['nombreConductor'] ?? '',
       codigoFiscalizador: map['codigoFiscalizador'] ?? '',
       motivo: map['motivo'] ?? '',
-      conforme: map['conforme'] ?? 'No especificado',
+      conforme: map['conforme'],
       descripciones: map['descripciones'],
       observaciones: map['observaciones'],
       inspectorId: map['inspectorId'] ?? '',
@@ -63,17 +69,29 @@ class BoletaModel {
       multa: (map['multa'] as num?)?.toDouble(),
       estado: map['estado'] ?? 'Activa',
       // --- FIN DE MEJORAS ---
-      fecha: (map['fecha'] as Timestamp).toDate(),
-      urlFotoLicencia: map['urlFotoLicencia'],
+      // _TypeError (type 'String' is not a subtype of type 'Timestamp' in type cast)
+      fecha: map['fecha'] == null
+          ? DateTime.now()
+          : map['fecha'] is Timestamp
+              ? (map['fecha'] as Timestamp).toDate()
+              : DateTime.tryParse(map['fecha']) ?? DateTime.now(),
+      
+      urlFotoLicencia: map['urlFotoLicencia'], nombreConductor: '',
     );
   }
+
+  get nombreConductor => null;
+
+  get monto => null;
 
   Map<String, dynamic> toFirestore() {
     return {
       'placa': placa,
       'empresa': empresa,
       'numeroLicencia': numeroLicencia,
-      'nombreConductor': conductor,
+      // ✅ CORREGIDO: Guardar el conductor con ambos nombres para compatibilidad
+      'conductor': conductor,
+      'nombreConductor': conductor, // Mantener compatibilidad con versiones anteriores
       'codigoFiscalizador': codigoFiscalizador,
       'motivo': motivo,
       'conforme': conforme,
@@ -110,8 +128,14 @@ class BoletaModel {
       inspectorId: inspectorId,
       inspectorEmail: inspectorEmail,
       inspectorNombre: inspectorNombre,
+      multa: multa,
+      estado: estado,
       fecha: fecha,
       urlFotoLicencia: urlFotoLicencia ?? this.urlFotoLicencia,
+      // _TypeError (type 'Null' is not a subtype of type 'String')
+      nombreConductor: '',
+      
+      
     );
   }
   // --- FIN DE MEJORAS ---

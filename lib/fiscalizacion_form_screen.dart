@@ -1,558 +1,876 @@
-import 'dart:io';
-import 'package:app_fiscalizacion/models/boleta_model.dart';
-import 'package:app_fiscalizacion/models/user_model.dart'; // <-- MEJORA: Importamos el modelo de usuario
-import 'package:app_fiscalizacion/services/print_service.dart';
-import 'package:app_fiscalizacion/theme/app_theme.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
+import '../models/boleta_model.dart';
+import '../models/user_model.dart';
+import '../services/print_service.dart';
+import '../services/camera_service.dart';
+// import '../widgets/image_preview_widget.dart' hide ImagePreviewWidget;
 
 class FiscalizacionFormScreen extends StatefulWidget {
-  final VoidCallback onBack;
+  final UserModel currentUser;
 
-  const FiscalizacionFormScreen({super.key, required this.onBack});
+  const FiscalizacionFormScreen({super.key, required this.currentUser});
 
   @override
-  State<FiscalizacionFormScreen> createState() =>
-      _FiscalizacionFormScreenState();
+  State<FiscalizacionFormScreen> createState() => _FiscalizacionFormScreenState();
 }
 
 class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _placaController = TextEditingController();
-  final _empresaController = TextEditingController();
-  final _fiscalizadorController = TextEditingController();
-  final _motivoController = TextEditingController();
-  final _observacionesController = TextEditingController();
-  final _licenciaController = TextEditingController();
   final _conductorController = TextEditingController();
-  final _descripcionesController = TextEditingController();
+  final _licenciaController = TextEditingController();
+  final _empresaController = TextEditingController();
+  final _motivoController = TextEditingController();
+  final _descripcionesController = TextEditingController(); // ✅ NUEVO: Campo descripciones
+  final _observacionesController = TextEditingController();
   final _multaController = TextEditingController();
-  String _estadoBoletaSeleccionado = 'Activa';
+  
+  String _conforme = 'No';
+  String _estado = 'Activa';
+  bool _isLoading = false;
+  String? _urlFotoLicencia; // ✅ NUEVO: URL de la foto de licencia
+  DateTime _fechaHora = DateTime.now();
 
-  final List<String> _opcionesConforme = ['Sí', 'No', 'Parcialmente'];
-  File? _fotoLicencia;
-  String? _conformeSeleccionado;
-  bool _isProcessing = false;
-
-  // --- MEJORA: Lógica para obtener y guardar los datos del usuario actual ---
-  UserModel? _currentUser;
-  bool _isLoading = true;
-  // --- FIN DE LA MEJORA ---
+  final List<String> _conformeOptions = ['Sí', 'No', 'Parcial'];
+  final List<String> _estadoOptions = ['Activa', 'Pagada', 'Anulada'];
 
   @override
   void initState() {
     super.initState();
-    _cargarDatosFiscalizador();
+    // Actualizar la fecha y hora cada minuto
+    _updateDateTime();
+  }
+
+  void _updateDateTime() {
+    if (mounted) {
+      setState(() {
+        _fechaHora = DateTime.now();
+      });
+      // Programar la siguiente actualización
+      Future.delayed(const Duration(minutes: 1), _updateDateTime);
+    }
   }
 
   @override
   void dispose() {
     _placaController.dispose();
-    _empresaController.dispose();
-    _fiscalizadorController.dispose();
-    _motivoController.dispose();
-    _observacionesController.dispose();
-    _licenciaController.dispose();
     _conductorController.dispose();
-    _descripcionesController.dispose();
+    _licenciaController.dispose();
+    _empresaController.dispose();
+    _motivoController.dispose();
+    _descripcionesController.dispose(); // ✅ NUEVO: Dispose del campo descripciones
+    _observacionesController.dispose();
+    _multaController.dispose();
     super.dispose();
   }
 
-  // --- MEJORA: La lógica ahora carga el perfil completo desde Firestore ---
-  Future<void> _cargarDatosFiscalizador() async {
-    final firebaseUser = FirebaseAuth.instance.currentUser;
-    if (firebaseUser == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(firebaseUser.uid)
-          .get();
-      if (doc.exists && mounted) {
-        setState(() {
-          _currentUser = UserModel.fromMap(doc.data()!);
-          _fiscalizadorController.text =
-              _currentUser?.codigoFiscalizador ?? 'SIN CÓDIGO';
-          _isLoading = false;
-        });
-      } else {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-  // --- FIN DE LA MEJORA ---
+  Future<void> _guardarBoleta() async {
+    if (!_formKey.currentState!.validate()) return;
 
-  // La función _guardarDatosFiscalizador ya no es necesaria, la podemos eliminar.
-
-  Future<void> _limpiarCampos() async {
-    _formKey.currentState?.reset();
-    _placaController.clear();
-    _empresaController.clear();
-    _motivoController.clear();
-    _licenciaController.clear();
-    _conductorController.clear();
-    _observacionesController.clear();
-    _descripcionesController.clear();
-    setState(() {
-      _conformeSeleccionado = null;
-      _fotoLicencia = null;
-    });
-    // Volvemos a poner el código del fiscalizador que no debe borrarse
-    _fiscalizadorController.text =
-        _currentUser?.codigoFiscalizador ?? 'SIN CÓDIGO';
-  }
-
-  Future<void> _tomarFoto() async {
-    final picker = ImagePicker();
-    final XFile? pickedFile = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 50,
-    );
-    if (pickedFile == null) return;
-
-    final imageBytes = await pickedFile.readAsBytes();
-    final image = img.decodeImage(imageBytes);
-    if (image == null) return;
-
-    final resizedImage = img.copyResize(image, width: 800);
-    final resizedBytes = img.encodeJpg(resizedImage, quality: 85);
-    final tempDir = await getTemporaryDirectory();
-    final tempPath =
-        '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-    final resizedFile = File(tempPath)..writeAsBytesSync(resizedBytes);
-
-    if (mounted) {
-      setState(() => _fotoLicencia = resizedFile);
-    }
-  }
-
-  Future<void> _finalizarEImprimir() async {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content:
-                Text('Por favor, complete todos los campos obligatorios.')),
-      );
-      return;
-    }
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-
-    final user = FirebaseAuth.instance.currentUser;
-    // --- MEJORA: Usamos el perfil del usuario que ya hemos cargado ---
-    if (user == null || _currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Error: No se pudo cargar el perfil del usuario.'),
-            backgroundColor: Colors.red),
-      );
-      setState(() => _isProcessing = false);
-      return;
-    }
-    // --- FIN DE LA MEJORA ---
+    setState(() => _isLoading = true);
 
     try {
+      final now = DateTime.now();
+      
       final boleta = BoletaModel(
-        id: '',
+        id: '', // Se asignará automáticamente por Firestore
         placa: _placaController.text.trim().toUpperCase(),
-        empresa: _empresaController.text.trim(),
-        numeroLicencia: _licenciaController.text.trim(),
         conductor: _conductorController.text.trim(),
-        // --- MEJORA: Guardamos los datos correctos del inspector ---
-        codigoFiscalizador: _currentUser!.codigoFiscalizador ?? 'N/A',
-        inspectorNombre: _currentUser!.nombreCompleto,
-        // --- FIN DE LA MEJORA ---
+        numeroLicencia: _licenciaController.text.trim(),
+        empresa: _empresaController.text.trim(),
         motivo: _motivoController.text.trim(),
-        conforme: _conformeSeleccionado!,
-        descripciones: _descripcionesController.text.trim(),
-        observaciones: _observacionesController.text.trim(),
-        //inspectorId: user.uid,
-        inspectorId: _currentUser!.nombreCompleto,
-        multa: double.tryParse(_multaController.text) ?? 0.0,
-        estado: _estadoBoletaSeleccionado,
-        inspectorEmail: user.email,
-        fecha: DateTime.now(),
+        conforme: _conforme.isEmpty ? null : _conforme,
+        observaciones: _observacionesController.text.trim().isEmpty 
+            ? null 
+            : _observacionesController.text.trim(),
+        fecha: now,
+        inspectorId: widget.currentUser.uid,
+        inspectorEmail: widget.currentUser.email,
+        inspectorNombre: widget.currentUser.name,
+        codigoFiscalizador: widget.currentUser.code,
+        estado: _estado,
+        multa: _multaController.text.trim().isEmpty 
+            ? null 
+            : double.tryParse(_multaController.text.trim()),
+        descripciones: _descripcionesController.text.trim().isEmpty // ✅ CORREGIDO: Campo separado
+            ? null 
+            : _descripcionesController.text.trim(),
+        urlFotoLicencia: _urlFotoLicencia, nombreConductor: '', // ✅ NUEVO: URL de la foto de licencia
       );
 
+      // Guardar en Firestore
       final docRef = await FirebaseFirestore.instance
           .collection('boletas')
           .add(boleta.toFirestore());
 
-      String? url;
-      if (_fotoLicencia != null) {
-        final ref = FirebaseStorage.instance.ref('licencias/${docRef.id}.jpg');
-        await ref.putFile(_fotoLicencia!);
-        url = await ref.getDownloadURL();
-        await docRef.update({'urlFotoLicencia': url});
+      // Actualizar el ID de la boleta
+      final boletaConId = boleta.copyWith(id: docRef.id);
+
+      setState(() => _isLoading = false);
+
+      if (mounted) {
+        // Mostrar diálogo de éxito con opciones
+        _showPrintOptions(boletaConId);
       }
-
-      final boletaFinal = boleta.copyWith(id: docRef.id, urlFotoLicencia: url);
-
-      await PrintService.printBoleta(boletaFinal);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Fiscalización completada e impresa exitosamente.'),
-            backgroundColor: Colors.green),
-      );
-      await _limpiarCampos();
     } catch (e) {
-      if (e.toString().contains('No se pudo conectar')) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Error de Impresión'),
-            content: const Text(
-                'No se pudo conectar a la impresora. Por favor, verifica que esté encendida, vinculada por Bluetooth y seleccionada en "Configurar Impresora".'),
-            actions: [
-              TextButton(
-                child: const Text('Ir a Configuración'),
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  Navigator.pushNamed(context, '/impresoras');
-                },
-              ),
-              TextButton(
-                child: const Text('OK'),
-                onPressed: () => Navigator.of(context).pop(),
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al guardar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showPrintOptions(BoletaModel boleta) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icono de éxito
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.green.shade200, width: 2),
+                ),
+                child: Icon(
+                  Icons.check_circle,
+                  color: Colors.green.shade600,
+                  size: 40,
+                ),
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // Título
+              const Text(
+                'Boleta Guardada',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1D29),
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Subtítulo
+              const Text(
+                '¿Qué deseas hacer ahora?',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Color(0xFF64748B),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              
+              const SizedBox(height: 24),
+              
+              // Botones principales
+              Row(
+                children: [
+                  // Botón PDF
+                  Expanded(
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF3B82F6), Color(0xFF1E40AF)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(dialogContext);
+                          // TODO: Implementar generación de PDF
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Función PDF en desarrollo'),
+                              backgroundColor: Colors.blue,
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.picture_as_pdf, color: Colors.white),
+                        label: const Text(
+                          'PDF',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 12),
+                  
+                  // Botón Imprimir
+                  Expanded(
+                    child: Container(
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFDC143C), Color(0xFFB91C1C)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFDC143C).withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await _imprimirBoleta(boleta);
+                        },
+                        icon: const Icon(Icons.print, color: Colors.white),
+                        label: const Text(
+                          'Imprimir',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 16),
+              
+              // Botones secundarios
+              Row(
+                children: [
+                  // Botón Crear Nueva
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.pop(dialogContext);
+                        _limpiarFormulario();
+                      },
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'Crear Nueva\nBoleta',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 16),
+                  
+                  // Botón Cerrar
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cerrar',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _imprimirBoleta(BoletaModel boleta) async {
+    try {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Enviando a impresora...'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 2),
+          ),
         );
-      } else {
+      }
+      
+      await PrintService.printBoleta(boleta);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impresión enviada correctamente'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Error al procesar: $e'),
-              backgroundColor: Colors.red),
+            content: Text('Error al imprimir: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
-    } finally {
-      if (mounted) {
-        setState(() => _isProcessing = false);
-      }
     }
+  }
+
+  void _limpiarFormulario() {
+    _formKey.currentState?.reset();
+    _placaController.clear();
+    _conductorController.clear();
+    _licenciaController.clear();
+    _empresaController.clear();
+    _motivoController.clear();
+    _descripcionesController.clear(); // ✅ NUEVO: Limpiar descripciones
+    _observacionesController.clear();
+    _multaController.clear();
+    setState(() {
+      _conforme = 'No';
+      _estado = 'Activa';
+      _urlFotoLicencia = null; // ✅ NUEVO: Limpiar foto de licencia
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: IconButton(
-            onPressed: widget.onBack, icon: const Icon(Icons.arrow_back)),
-        title: const Text('Formulario de Fiscalización'),
+        title: const Text('Nueva Fiscalización'),
+        backgroundColor: const Color.fromARGB(255, 5, 5, 5),
+        foregroundColor: const Color(0xFF1A1D29),
+        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _limpiarCampos,
-            tooltip: 'Limpiar Formulario',
+            onPressed: _limpiarFormulario,
+            icon: const Icon(Icons.clear_all),
+            tooltip: 'Limpiar formulario',
           ),
         ],
       ),
-      // --- MEJORA: Mostramos un indicador de carga mientras se obtienen los datos del inspector ---
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppTheme.primaryRed))
-          : Container(
-              // --- FIN DE LA MEJORA ---
-              decoration:
-                  const BoxDecoration(gradient: AppTheme.backgroundGradient),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16.0),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    children: [
-                      _buildInfoCard(),
-                      const SizedBox(height: 16),
-                      _buildVehicleCard(),
-                      const SizedBox(height: 16),
-                      _buildDriverCard(),
-                      const SizedBox(height: 16),
-                      _buildInspectionCard(),
-                      const SizedBox(height: 24),
-                      _buildActions(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-    );
-  }
-
-  Widget _buildCardHeader(String title, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: AppTheme.primaryRed.withOpacity(0.05),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(24),
-          topRight: Radius.circular(24),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color.fromARGB(255, 19, 13, 13), Color.fromARGB(255, 39, 17, 17)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              gradient: AppTheme.primaryGradient.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: AppTheme.primaryRed),
-          ),
-          const SizedBox(width: 16),
-          Text(title, style: Theme.of(context).textTheme.titleLarge),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoCard() {
-    return Card(
-      child: Column(
-        children: [
-          _buildCardHeader(
-              'Información General', Icons.assignment_ind_outlined),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Form(
+            key: _formKey,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Tarjeta del inspector
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(18),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8ECDF7), Color(0xFF3B82F6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.access_time, color: AppTheme.primaryRed),
-                      const SizedBox(width: 12),
+                      const Icon(
+                        Icons.person_pin,
+                        color: Colors.white,
+                        size: 32,
+                      ),
+                      const SizedBox(width: 16),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Fecha y Hora Actual',
-                                style: TextStyle(
-                                    color: AppTheme.mutedForeground,
-                                    fontSize: 12)),
+                            const Text(
+                              '👤 Inspector de Fiscalización',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
                             Text(
-                                DateFormat('dd/MM/yyyy HH:mm:ss', 'es_PE')
-                                    .format(DateTime.now()),
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
+                              'Nombre: ${widget.currentUser.name}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                            Text(
+                              'Código: ${widget.currentUser.code}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.access_time,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              DateFormat('dd/MM/yy HH:mm').format(_fechaHora),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                // --- MEJORA: Campo de código de fiscalizador automático y de solo lectura ---
-                TextFormField(
-                  controller: _fiscalizadorController,
-                  readOnly: true, // El inspector no puede cambiar su código
-                  decoration: InputDecoration(
-                    labelText: 'Código del Fiscalizador',
-                    prefixIcon: const Icon(Icons.badge_outlined),
-                    filled: true,
-                    fillColor: Colors.grey
-                        .shade200, // Color de fondo para indicar que no es editable
-                  ),
-                ),
-                // --- FIN DE LA MEJORA ---
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  // ... (El resto de los widgets _buildVehicleCard, _buildDriverCard, etc. se mantienen igual)
+                const SizedBox(height: 24),
 
-  Widget _buildVehicleCard() {
-    return Card(
-      child: Column(
-        children: [
-          _buildCardHeader('Datos del Vehículo', Icons.directions_car_outlined),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
+                // Sección: Datos del Vehículo
+                _buildSectionHeader('🚗 Datos del Vehículo', const Color(0xFF059669)),
+                const SizedBox(height: 12),
+                
                 TextFormField(
                   controller: _placaController,
                   decoration: const InputDecoration(
-                      labelText: 'Número de Placa *', hintText: 'V1A-123'),
+                    labelText: 'Placa del Vehículo',
+                    hintText: 'Ej: ABC-123',
+                    prefixIcon: Icon(Icons.directions_car),
+                    border: OutlineInputBorder(),
+                  ),
                   textCapitalization: TextCapitalization.characters,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Campo requerido' : null,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'La placa es obligatoria';
+                    }
+                    return null;
+                  },
                 ),
+                
                 const SizedBox(height: 16),
+                
                 TextFormField(
                   controller: _empresaController,
                   decoration: const InputDecoration(
-                    labelText: 'Nombre de la Empresa *',
-                    hintText: 'Transportes Perú S.A.',
-                    prefixIcon: Icon(Icons.business_outlined),
+                    labelText: 'Empresa de Transporte',
+                    hintText: 'Nombre de la empresa',
+                    prefixIcon: Icon(Icons.business),
+                    border: OutlineInputBorder(),
                   ),
-                  textCapitalization: TextCapitalization.words,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Campo requerido' : null,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'La empresa es obligatoria';
+                    }
+                    return null;
+                  },
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildDriverCard() {
-    return Card(
-      child: Column(
-        children: [
-          _buildCardHeader('Información del Conductor', Icons.person_outline),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
+                const SizedBox(height: 24),
+
+                // Sección: Datos del Conductor
+                _buildSectionHeader('👤 Datos del Conductor', const Color(0xFF7C3AED)),
+                const SizedBox(height: 12),
+                
                 TextFormField(
                   controller: _conductorController,
                   decoration: const InputDecoration(
-                      labelText: 'Nombre Completo del Conductor *',
-                      hintText: 'Juan Pérez Ramírez'),
-                  textCapitalization: TextCapitalization.words,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Campo requerido' : null,
+                    labelText: 'Nombre del Conductor',
+                    hintText: 'Nombre completo',
+                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El nombre del conductor es obligatorio';
+                    }
+                    return null;
+                  },
                 ),
+                
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _licenciaController,
-                        decoration: const InputDecoration(
-                            labelText: 'Número de Licencia *',
-                            hintText: 'B1234567'),
-                        textCapitalization: TextCapitalization.characters,
-                        validator: (value) =>
-                            value!.isEmpty ? 'Campo requerido' : null,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    IconButton(
-                      onPressed: _tomarFoto,
-                      icon: Icon(_fotoLicencia == null
-                          ? Icons.camera_alt_outlined
-                          : Icons.check_circle),
-                      color: _fotoLicencia == null
-                          ? AppTheme.mutedForeground
-                          : Colors.green,
-                      tooltip: 'Tomar foto de licencia',
-                    )
-                  ],
+                
+                TextFormField(
+                  controller: _licenciaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Número de Licencia',
+                    hintText: 'Número de licencia de conducir',
+                    prefixIcon: Icon(Icons.credit_card),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El número de licencia es obligatorio';
+                    }
+                    return null;
+                  },
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildInspectionCard() {
-    return Card(
-      child: Column(
-        children: [
-          _buildCardHeader(
-              'Detalles de la Fiscalización', Icons.warning_amber_outlined),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
+                const SizedBox(height: 24),
+
+                // Sección: Detalles de la Fiscalización
+                _buildSectionHeader('📋 Detalles de la Fiscalización', const Color(0xFFDC143C)),
+                const SizedBox(height: 12),
+                
                 TextFormField(
                   controller: _motivoController,
                   decoration: const InputDecoration(
-                      labelText: 'Motivo *',
-                      hintText: 'Falta de documentos, exceso de velocidad...'),
-                  textCapitalization: TextCapitalization.sentences,
-                  validator: (value) =>
-                      value!.isEmpty ? 'Campo requerido' : null,
+                    labelText: 'Motivo de la Fiscalización',
+                    hintText: 'Describe el motivo',
+                    prefixIcon: Icon(Icons.assignment),
+                    border: OutlineInputBorder(),
+                  ),
                   maxLines: 2,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: _conformeSeleccionado,
-                  decoration: const InputDecoration(
-                      labelText: '¿Conforme? *',
-                      prefixIcon: Icon(Icons.check_circle_outline)),
-                  items: _opcionesConforme
-                      .map((opcion) =>
-                          DropdownMenuItem(value: opcion, child: Text(opcion)))
-                      .toList(),
-                  onChanged: (value) =>
-                      setState(() => _conformeSeleccionado = value),
-                  validator: (value) =>
-                      value == null ? 'Seleccione una opción' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _multaController,
-                  decoration: const InputDecoration(
-                    labelText: 'Monto de Multa (S/)',
-                    hintText: '0.00',
-                    prefixIcon: Icon(Icons.attach_money),
-                  ),
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  value: _estadoBoletaSeleccionado,
-                  decoration: const InputDecoration(
-                    labelText: 'Estado de la Boleta',
-                    prefixIcon: Icon(Icons.flag_outlined),
-                  ),
-                  items: ['Activa', 'Pagada', 'Anulada']
-                      .map((estado) =>
-                          DropdownMenuItem(value: estado, child: Text(estado)))
-                      .toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _estadoBoletaSeleccionado = value;
-                      });
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'El motivo es obligatorio';
                     }
+                    return null;
                   },
                 ),
+
                 const SizedBox(height: 16),
+
+                // ✅ NUEVO: Campo Descripciones
                 TextFormField(
                   controller: _descripcionesController,
                   decoration: const InputDecoration(
-                      labelText: 'Descripciones Adicionales',
-                      hintText: 'Vehículo sin SOAT, etc.'),
-                  maxLines: 2,
-                  textCapitalization: TextCapitalization.sentences,
+                    labelText: 'Descripción Detallada',
+                    hintText: 'Descripción específica de la infracción o situación',
+                    prefixIcon: Icon(Icons.description),
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 3,
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'La descripción es obligatoria';
+                    }
+                    return null;
+                  },
                 ),
+                
                 const SizedBox(height: 16),
+                
+                // ✅ NUEVO: Sección de Foto de Licencia
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.camera_alt, color: Color(0xFFDC143C)),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Foto de Licencia',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1D29),
+                            ),
+                          ),
+                          const Spacer(),
+                          if (_urlFotoLicencia == null)
+                            ElevatedButton.icon(
+                              onPressed: _isLoading ? null : _capturarFotoLicencia,
+                              icon: const Icon(Icons.camera_alt, size: 16),
+                              label: const Text('Capturar'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFDC143C),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                minimumSize: const Size(0, 36),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ImagePreviewWidget(
+                        imageUrl: _urlFotoLicencia,
+                        onRetake: _isLoading ? null : _capturarFotoLicencia,
+                        onRemove: _isLoading ? null : _eliminarFotoLicencia,
+                      ),
+                      if (_urlFotoLicencia == null)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            'Opcional: Captura una foto de la licencia del conductor para adjuntar a la boleta.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Estado de Conformidad
+                DropdownButtonFormField<String>(
+                  value: _conforme,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado de Conformidad',
+                    prefixIcon: Icon(Icons.check_circle),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _conformeOptions.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() => _conforme = newValue);
+                    }
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Estado de la Boleta
+                DropdownButtonFormField<String>(
+                  value: _estado,
+                  decoration: const InputDecoration(
+                    labelText: 'Estado de la Boleta',
+                    prefixIcon: Icon(Icons.flag),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _estadoOptions.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() => _estado = newValue);
+                    }
+                  },
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // Observaciones (opcional)
                 TextFormField(
                   controller: _observacionesController,
                   decoration: const InputDecoration(
-                      labelText: 'Observaciones del Inspector',
-                      hintText: 'El conductor mostró actitud colaborativa...'),
-                  maxLines: 3,
-                  textCapitalization: TextCapitalization.sentences,
+                    labelText: 'Observaciones (Opcional)',
+                    hintText: 'Observaciones adicionales',
+                    prefixIcon: Icon(Icons.note),
+                    border: OutlineInputBorder(),
+                  ),
+                  maxLines: 2,
                 ),
+                
+                const SizedBox(height: 16),
+                
+                // Multa (opcional)
+                TextFormField(
+                  controller: _multaController,
+                  decoration: const InputDecoration(
+                    labelText: 'Multa (Opcional)',
+                    hintText: 'Monto de la multa en soles',
+                    prefixIcon: Icon(Icons.attach_money),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+
+                const SizedBox(height: 32),
+
+                // Botón de guardar
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFDC143C), Color(0xFFB91C1C)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFDC143C).withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton.icon(
+                      onPressed: _isLoading ? null : _guardarBoleta,
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.save, color: Colors.white),
+                      label: Text(
+                        _isLoading ? 'Guardando...' : '💾 Guardar Boleta',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 20,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: color,
             ),
           ),
         ],
@@ -560,22 +878,136 @@ class _FiscalizacionFormScreenState extends State<FiscalizacionFormScreen> {
     );
   }
 
-  Widget _buildActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ElevatedButton.icon(
-          icon: _isProcessing
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      color: Colors.white, strokeWidth: 2))
-              : const Icon(Icons.print_outlined),
-          label: Text(_isProcessing ? 'Procesando...' : 'Finalizar e Imprimir'),
-          onPressed: _finalizarEImprimir,
-        ),
-      ],
+  // ✅ NUEVO: Función para capturar foto de licencia
+  Future<void> _capturarFotoLicencia() async {
+    if (_isLoading) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Generar un ID temporal para la boleta (se usará para nombrar la imagen)
+      final String tempBoletaId = DateTime.now().millisecondsSinceEpoch.toString();
+      
+      final String? urlFoto = await CameraService.capturarFotoLicencia(
+        boletaId: tempBoletaId,
+        context: context,
+      );
+
+      if (urlFoto != null && mounted) {
+        setState(() {
+          _urlFotoLicencia = urlFoto;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Foto de licencia capturada exitosamente'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error al capturar foto: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  // ✅ NUEVO: Función para eliminar foto de licencia
+  Future<void> _eliminarFotoLicencia() async {
+    if (_urlFotoLicencia == null || _isLoading) return;
+
+    // Mostrar confirmación
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Eliminar Foto'),
+        content: const Text('¿Estás seguro de que deseas eliminar la foto de la licencia?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
     );
+
+    if (confirmar != true) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Eliminar de Firebase Storage
+      if (_urlFotoLicencia != null) {
+        await CameraService.eliminarFotoLicencia(_urlFotoLicencia!);
+      }
+
+      setState(() {
+        _urlFotoLicencia = null;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Foto eliminada exitosamente'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Error al eliminar foto: $e')),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 }

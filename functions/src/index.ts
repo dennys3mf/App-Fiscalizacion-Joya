@@ -1,4 +1,4 @@
-import {onRequest} from "firebase-functions/v2/https";
+import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 // Ensure Storage types are available when using admin.storage()
 import "firebase-admin/storage";
@@ -54,8 +54,10 @@ const toDateSafe = (v: AnyDate): Date | null => {
       const d = new Date(v);
       return isNaN(d.getTime()) ? null : d;
     }
-  } catch {}
-  return null;
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 const toMillis = (v: AnyDate): number | null => {
@@ -63,289 +65,178 @@ const toMillis = (v: AnyDate): number | null => {
   return d ? d.getTime() : null;
 };
 
-export const verificarBoleta = onRequest(
-  {
-    region: "southamerica-west1",
-    memory: "512MiB",
-  },
-  async (request: Request, response: Response) => {
-    const boletaId = request.query.id;
+// ===================== FUNCIÓN PARA GENERAR PDF =====================
+export const generateBoletaPdf = onCall(
+  {region: "southamerica-west1"},
+  async (request) => {
+    const {boletaId} = request.data;
+    if (!boletaId) {
+      throw new HttpsError("invalid-argument", "ID de boleta requerido");
+    }
 
-    if (!boletaId || typeof boletaId !== "string") {
-      response.status(400).send("ID de boleta no proporcionado o inválido.");
+    try {
+      const boletaDoc = await db.collection("boletas").doc(boletaId).get();
+      if (!boletaDoc.exists) {
+        throw new HttpsError("not-found", "Boleta no encontrada");
+      }
+
+      const boleta = boletaDoc.data()!;
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595.28, 841.89]); // A4
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+      const {width, height} = page.getSize();
+      let yPosition = height - 50;
+
+      // Función auxiliar para agregar texto
+      const addText = (text: string, x: number, size: number, isBold = false) => {
+        page.drawText(text, {
+          x,
+          y: yPosition,
+          size,
+          font: isBold ? boldFont : font,
+          color: textoGris,
+        });
+        yPosition -= size + 5;
+      };
+
+      // Encabezado
+      addText("MUNICIPALIDAD DISTRITAL DE LA JOYA", 50, 18, true);
+      addText("GERENCIA DE TRANSPORTE", 50, 14, true);
+      yPosition -= 20;
+
+      addText("BOLETA DE FISCALIZACIÓN", 50, 16, true);
+      addText(`ACTA DE CONTROL Nro: ${boletaId.substring(0, 8).toUpperCase()}`, 50, 12);
+      yPosition -= 20;
+
+      // Datos de la boleta
+      const fechaStr = boleta.fecha ? formatInTimeZone(
+        toDateSafe(boleta.fecha) || new Date(),
+        "America/Lima",
+        "dd/MM/yyyy HH:mm"
+      ) : "No especificada";
+
+      addText(`Fecha y Hora: ${fechaStr}`, 50, 12);
+      addText(`Placa: ${boleta.placa || "No especificada"}`, 50, 12);
+      addText(`Conductor: ${boleta.conductor || boleta.nombreConductor || "No especificado"}`, 50, 12);
+      addText(`Empresa: ${boleta.empresa || "No especificada"}`, 50, 12);
+      addText(`Motivo: ${boleta.motivo || "No especificado"}`, 50, 12);
+      addText(`Conforme: ${boleta.conforme || "No especificado"}`, 50, 12);
+
+      if (boleta.multa && boleta.multa > 0) {
+        addText(`Multa: S/ ${boleta.multa.toFixed(2)}`, 50, 12);
+      }
+
+      if (boleta.observaciones) {
+        yPosition -= 10;
+        addText("Observaciones:", 50, 12, true);
+        addText(boleta.observaciones, 50, 10);
+      }
+
+      // Generar PDF
+      const pdfBytes = await pdfDoc.save();
+      const fileName = `boleta_${boletaId}_${Date.now()}.pdf`;
+      const file = storage.file(`pdfs/${fileName}`);
+
+      await file.save(Buffer.from(pdfBytes), {
+        metadata: {contentType: "application/pdf"},
+      });
+
+      // Hacer el archivo público
+      await file.makePublic();
+      const publicUrl = `https://storage.googleapis.com/${storage.name}/pdfs/${fileName}`;
+
+      return {success: true, url: publicUrl};
+    } catch (error) {
+      console.error("Error generando PDF:", error);
+      throw new HttpsError("internal", "Error al generar PDF");
+    }
+  }
+);
+
+// ===================== FUNCIÓN PARA VERIFICAR BOLETA =====================
+export const verificarBoleta = functions.https.onRequest(
+  { region: "southamerica-west1" },
+  async (req: Request, res: Response) => {
+    const {id} = req.query;
+    if (!id || typeof id !== "string") {
+      res.status(400).send("ID de boleta requerido");
       return;
     }
 
     try {
-      const doc = await db.collection("boletas").doc(boletaId).get();
-      if (!doc.exists) {
-        response.status(404).send("Boleta no encontrada.");
-        return;
-      }
-      const boletaData = doc.data() as FirebaseFirestore.DocumentData;
-
-      // Descarga de assets con manejo de errores específico
-      const [logoResult, firmaResult] = await Promise.allSettled([
-        storage.file("logo_muni_joya.png").download(),
-        storage.file("firmas/firma_gerente.png").download(),
-      ]);
-
-      if (logoResult.status === "rejected") {
-        const code = (logoResult.reason && (logoResult.reason.code || logoResult.reason.statusCode)) || 500;
-        response.status(code === 404 ? 404 : 500).send("No se pudo cargar el logo institucional.");
-        return;
-      }
-      if (firmaResult.status === "rejected") {
-        const code = (firmaResult.reason && (firmaResult.reason.code || firmaResult.reason.statusCode)) || 500;
-        response.status(code === 404 ? 404 : 500).send("No se pudo cargar la firma del gerente.");
+      const boletaDoc = await db.collection("boletas").doc(id).get();
+      if (!boletaDoc.exists) {
+        res.status(404).send("Boleta no encontrada");
         return;
       }
 
-      const logoBytes = logoResult.value[0];
-      const firmaBytes = firmaResult.value[0];
+      const boleta = boletaDoc.data()!;
+      const fechaStr = boleta.fecha ? formatInTimeZone(
+        toDateSafe(boleta.fecha) || new Date(),
+        "America/Lima",
+        "dd/MM/yyyy HH:mm"
+      ) : "No especificada";
 
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage();
-      const {width, height} = page.getSize();
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Verificación de Boleta</title>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            .header { text-align: center; margin-bottom: 30px; }
+            .valid { color: green; font-weight: bold; }
+            .detail { margin: 10px 0; }
+            .label { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>MUNICIPALIDAD DISTRITAL DE LA JOYA</h1>
+            <h2>GERENCIA DE TRANSPORTE</h2>
+            <p class="valid">✓ BOLETA VÁLIDA</p>
+          </div>
+          <div class="detail"><span class="label">ID:</span> ${id}</div>
+          <div class="detail"><span class="label">Fecha:</span> ${fechaStr}</div>
+          <div class="detail"><span class="label">Placa:</span> ${boleta.placa || "No especificada"}</div>
+          <div class="detail"><span class="label">Conductor:</span> ${boleta.conductor || boleta.nombreConductor || "No especificado"}</div>
+          <div class="detail"><span class="label">Empresa:</span> ${boleta.empresa || "No especificada"}</div>
+          <div class="detail"><span class="label">Motivo:</span> ${boleta.motivo || "No especificado"}</div>
+          <div class="detail"><span class="label">Conforme:</span> ${boleta.conforme || "No especificado"}</div>
+          ${boleta.multa && boleta.multa > 0 ? `<div class="detail"><span class="label">Multa:</span> S/ ${boleta.multa.toFixed(2)}</div>` : ""}
+        </body>
+        </html>
+      `;
 
-      const logoImage = await pdfDoc.embedPng(logoBytes);
-      const firmaImage = await pdfDoc.embedPng(firmaBytes);
-
-      const margin = 50;
-      let y = height - 70;
-
-      page.drawImage(logoImage, {
-        x: margin,
-        y: y - 50,
-        width: 80,
-        height: 80,
-      });
-
-      page.drawText("MUNICIPALIDAD DISTRITAL DE LA JOYA", {
-        x: margin + 100,
-        y: y,
-        font: fontBold,
-        size: 18,
-        color: rojoMuni,
-      });
-      page.drawText("GERENCIA DE TRANSPORTE", {
-        x: margin + 100,
-        y: y - 20,
-        font: font,
-        size: 14,
-        color: textoGris,
-      });
-
-      y -= 100;
-
-      page.drawLine({
-        start: {x: margin, y},
-        end: {x: width - margin, y},
-        thickness: 2,
-        color: doradoMuni,
-      });
-
-      y -= 30;
-
-      page.drawText("BOLETA DE FISCALIZACIÓN - VERIFICACIÓN", {
-        x: width / 2 - 170,
-        y,
-        font: fontBold,
-        size: 16,
-        color: rojoMuni,
-      });
-
-      y -= 40;
-
-      const drawRow = (label: string, value: string) => {
-        page.drawText(label, {x: margin, y, font: fontBold, size: 11, color: textoGris});
-        page.drawText(value, {x: margin + 150, y, font, size: 11});
-        y -= 20;
-      };
-
-      // ================== INICIO DEL ARREGLO DE HORA (robusto) ==================
-      const fechaUTC = toDateSafe(boletaData.fecha);
-      const fechaFormateada = fechaUTC
-        ? formatInTimeZone(fechaUTC, "America/Lima", "dd/MM/yyyy HH:mm:ss")
-        : "Sin fecha";
-      // =================== FIN DEL ARREGLO DE HORA (robusto) ===================
-
-      drawRow("Fecha y Hora:", fechaFormateada);
-      drawRow("Placa:", boletaData.placa);
-      drawRow("Empresa:", boletaData.empresa);
-      drawRow("Conductor:", boletaData.nombreConductor || "No registrado");
-      drawRow("N° Licencia:", boletaData.numeroLicencia || "No registrada");
-      drawRow("Inspector:", boletaData.inspectorNombre || "No registrado");
-      drawRow("Cód. Fiscalizador:", boletaData.codigoFiscalizador || "No registrado");
-
-      y -= 15;
-
-      // Utilidad simple para envolver texto según el ancho
-      const wrapText = (text: string, maxWidth: number, fontRef = font, size = 11): string[] => {
-        if (!text) return [];
-        const words = text.split(/\s+/);
-        const lines: string[] = [];
-        let line = "";
-        for (const word of words) {
-          const test = line ? `${line} ${word}` : word;
-          const w = fontRef.widthOfTextAtSize(test, size);
-          if (w <= maxWidth) {
-            line = test;
-          } else {
-            if (line) lines.push(line);
-            line = word;
-          }
-        }
-        if (line) lines.push(line);
-        return lines;
-      };
-
-      const drawSection = (title: string, content: string) => {
-        page.drawText(title, {x: margin, y, font: fontBold, size: 12, color: rojoMuni});
-        y -= 20;
-        const maxW = width - margin * 2;
-        const lines = wrapText(content || "", maxW, font, 11);
-        const lineHeight = 14;
-        for (const line of lines) {
-          page.drawText(line, {x: margin, y, font, size: 11});
-          y -= lineHeight;
-        }
-        y -= 20;
-      };
-
-      drawSection("Motivo de la Intervención:", boletaData.motivo);
-      drawSection("Conformidad:", boletaData.conforme || "No especificado.");
-      drawSection("Observaciones del Inspector:", boletaData.observaciones || "Ninguna.");
-
-      const firmaY = 80;
-      page.drawImage(firmaImage, {
-        x: width / 2 - 180,
-        y: firmaY - 45,
-        width: 360,
-        height: 180,
-      });
-      page.drawLine({
-        start: {x: width / 2 - 100, y: firmaY},
-        end: {x: width / 2 + 100, y: firmaY},
-        thickness: 0.5,
-        color: textoGris,
-      });
-      page.drawText("Gerente de Transportes", {
-        x: width / 2 - 55,
-        y: firmaY - 15,
-        font,
-        size: 10,
-        color: textoGris,
-      });
-
-      const pdfBytes = await pdfDoc.save();
-      const fileName = `boleta_verificada_${boletaId}.pdf`;
-      response.setHeader("Content-Type", "application/pdf");
-      response.setHeader(
-        "Content-Disposition",
-        `inline; filename="${fileName}"`,
-      );
-      response.send(Buffer.from(pdfBytes));
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
     } catch (error) {
-      console.error("Error al generar el PDF:", error);
-      response.status(500).send("Error interno al generar el PDF.");
+      console.error("Error verificando boleta:", error);
+      res.status(500).send("Error interno del servidor");
     }
-  },
-);
+  });
 
-
-export const crearInspector = onCall(
-  {
-    region: "southamerica-west1",
-  },
-  async (request) => {
-    // 1. Verificación de seguridad: ¿Quién está llamando a esta función?
-    if (!request.auth) {
-      throw new HttpsError(
-        "unauthenticated",
-        "La función debe ser llamada por un usuario autenticado.",
-      );
-    }
-    const callerUid = request.auth.uid;
-
-    try {
-      // 2. Verificamos el ROL del usuario que llama
-      const callerDoc = await db.collection("users").doc(callerUid).get();
-      if (!callerDoc.exists || callerDoc.data()?.rol !== "gerente") {
-        throw new HttpsError(
-          "permission-denied",
-          "No tienes permiso para ejecutar esta acción.",
-        );
-      }
-
-      // 3. Obtenemos los datos del nuevo inspector enviados desde la app
-      const {
-        nombreCompleto,
-        email,
-        password,
-        codigoFiscalizador,
-        telefono,
-        estado,
-      } = request.data;
-
-      if (!nombreCompleto || !email || !password || !codigoFiscalizador) {
-        throw new HttpsError(
-          "invalid-argument",
-          "Por favor, proporciona todos los campos requeridos.",
-        );
-      }
-
-      // 4. Creamos el usuario en Firebase Authentication
-      const userRecord = await admin.auth().createUser({
-        email: email,
-        password: password,
-        displayName: nombreCompleto,
-      });
-
-      // 5. Creamos el perfil del usuario en Firestore
-      await db.collection("users").doc(userRecord.uid).set({
-        uid: userRecord.uid,
-        nombreCompleto: nombreCompleto,
-        email: email,
-        codigoFiscalizador: codigoFiscalizador,
-        rol: "inspector", // Asignamos el rol por defecto
-        telefono: telefono,
-        estado: estado,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-
-      // 6. Si todo sale bien, enviamos una respuesta de éxito
-      return {
-        status: "success",
-        message: `Inspector ${nombreCompleto} creado exitosamente.`,
-        uid: userRecord.uid,
-      };
-    } catch (error: any) {
-      // Manejo de errores
-      if (error instanceof HttpsError) {
-        throw error; // Re-lanzamos errores de HttpsError
-      }
-      console.error("Error al crear inspector:", error);
-      throw new HttpsError(
-        "internal",
-        "Ocurrió un error interno al crear el inspector.",
-      );
-    }
-  },
-);
-
-// ... (después de la función crearInspector)
-
+// ✅ CORREGIDO: Función getDashboardData mejorada para contar correctamente
 export const getDashboardData = onCall(
   { region: "southamerica-west1" },
   async (request) => {
-    if (!request.auth || (await db.collection("users").doc(request.auth.uid).get()).data()?.rol !== "gerente") {
-      throw new HttpsError("permission-denied", "Acceso denegado.");
+    // Verificar permisos
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Usuario no autenticado.");
     }
 
     try {
+      const userDoc = await db.collection("users").doc(request.auth.uid).get();
+      const userData = userDoc.data();
+      
+      if (!userData || (userData.role !== "gerente" && userData.rol !== "gerente")) {
+        throw new HttpsError("permission-denied", "Acceso denegado. Solo gerentes pueden ver el dashboard.");
+      }
+
+      // Obtener datos en paralelo
       const [boletasSnapshot, usersSnapshot] = await Promise.all([
         db.collection("boletas").orderBy("fecha", "desc").get(),
         db.collection("users").get(),
@@ -355,19 +246,35 @@ export const getDashboardData = onCall(
         id: doc.id,
         ...(doc.data() as FirebaseFirestore.DocumentData),
       })) as Boleta[];
+      
       const users: UserDoc[] = usersSnapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as FirebaseFirestore.DocumentData),
       })) as UserDoc[];
 
-      // Calcular KPIs
-      const totalMultas = boletas.reduce((sum, b) => sum + (b.multa || 0), 0);
-      const totalConformes = boletas.filter((b) => b.conforme === "Sí").length;
-      const totalNoConformes = boletas.filter((b) => b.conforme === "No").length;
-      const totalParciales = boletas.filter((b) => b.conforme === "Parcialmente").length;
+      // ✅ MEJORADO: Cálculos más precisos
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
+      // Filtrar boletas de hoy
+      const boletasHoy = boletas.filter(boleta => {
+        const boletaDate = toDateSafe(boleta.fecha);
+        if (!boletaDate) return false;
+        const boletaDay = new Date(boletaDate.getFullYear(), boletaDate.getMonth(), boletaDate.getDate());
+        return boletaDay.getTime() === today.getTime();
+      });
+
+      // Calcular KPIs
+      const totalBoletas = boletas.length;
+      const boletasHoyCount = boletasHoy.length;
+      const totalMultas = boletas.reduce((sum, b) => sum + (b.multa || 0), 0);
+      const totalConformes = boletas.filter((b) => b.conforme === "Sí" || b.conforme === "Si").length;
+      const totalNoConformes = boletas.filter((b) => b.conforme === "No").length;
+      const totalParciales = boletas.filter((b) => b.conforme === "Parcial" || b.conforme === "Parcialmente").length;
+      
+      // ✅ CORREGIDO: Filtrar inspectores correctamente
       const inspectores = users
-        .filter((u) => u.rol === "inspector")
+        .filter((u) => u.role === "inspector" || u.rol === "inspector") // Verificar ambos campos
         .map((inspector) => {
           const inspectorKey = inspector.uid || inspector.id;
           const susBoletas = boletas.filter((b) => b.inspectorId === inspectorKey);
@@ -375,29 +282,220 @@ export const getDashboardData = onCall(
           return {
             ...inspector,
             boletas: susBoletas.length,
-            conformes: susBoletas.filter((b) => b.conforme === "Sí").length,
+            conformes: susBoletas.filter((b) => b.conforme === "Sí" || b.conforme === "Si").length,
             noConformes: susBoletas.filter((b) => b.conforme === "No").length,
             ultimaActividad: ultima,
           };
         });
 
+      // ✅ NUEVO: Datos para gráficos por mes
+      const boletasPorMes = Array.from({length: 12}, (_, i) => {
+        const mes = i;
+        const año = now.getFullYear();
+        return boletas.filter(boleta => {
+          const boletaDate = toDateSafe(boleta.fecha);
+          if (!boletaDate) return false;
+          return boletaDate.getMonth() === mes && boletaDate.getFullYear() === año;
+        }).length;
+      });
+
+      // ✅ NUEVO: Multas pendientes (boletas activas con multa)
+      const multasPendientes = boletas.filter(b => 
+        (b.estado === "Activa" || !b.estado) && 
+        b.multa && 
+        b.multa > 0
+      ).length;
+
+      // ✅ NUEVO: Total recaudado (multas de boletas pagadas)
+      const totalRecaudado = boletas
+        .filter(b => b.estado === "Pagada")
+        .reduce((sum, b) => sum + (b.multa || 0), 0);
+
       return {
-        totalBoletas: boletas.length,
+        totalBoletas,
+        boletasHoy: boletasHoyCount,
         totalConformes,
         totalNoConformes,
         totalParciales,
         totalMultas,
+        multasPendientes,
+        totalRecaudado,
         inspectoresActivos: inspectores.filter((i) => i.estado === "Activo").length,
         totalInspectores: inspectores.length,
+        boletasPorMes,
         boletasRecientes: boletas.slice(0, 5).map((b) => ({
           ...b,
           fecha: toMillis(b.fecha),
         })),
-        inspectores,
+        inspectores: inspectores.map(inspector => ({
+          ...inspector,
+          ultimaActividad: inspector.ultimaActividad,
+        })),
       };
     } catch (error) {
       console.error("Error al obtener datos del dashboard:", error);
       throw new HttpsError("internal", "No se pudieron cargar los datos del dashboard.");
     }
-  },
+  }
+);
+
+
+// ✅ CORREGIDO: Trigger para actualizar estadísticas cuando se crea una boleta
+// Import v1 functions for Firestore triggers
+import * as functionsV1 from "firebase-functions/v1";
+
+export const onBoletaCreated = functionsV1.firestore
+  .document("boletas/{boletaId}")
+  .onCreate(async (snap, context) => {
+    try {
+      const boleta = snap.data();
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Actualizar estadísticas diarias
+      const statsRef = db.collection("stats").doc(today.toISOString().split('T')[0]);
+      
+      await statsRef.set({
+        fecha: admin.firestore.Timestamp.fromDate(today),
+        totalBoletas: admin.firestore.FieldValue.increment(1),
+        totalMultas: admin.firestore.FieldValue.increment(boleta.multa || 0),
+        ultimaActualizacion: admin.firestore.Timestamp.now(),
+      }, { merge: true });
+
+      // Actualizar estadísticas del inspector
+      if (boleta.inspectorId) {
+        const inspectorStatsRef = db.collection("inspectorStats").doc(boleta.inspectorId);
+        await inspectorStatsRef.set({
+          totalBoletas: admin.firestore.FieldValue.increment(1),
+          ultimaBoleta: admin.firestore.Timestamp.now(),
+        }, { merge: true });
+      }
+
+      console.log(`Estadísticas actualizadas para boleta ${context.params.boletaId}`);
+    } catch (error) {
+      console.error("Error actualizando estadísticas:", error);
+    }
+  });
+
+// ===================== FUNCIÓN PARA OBTENER INSPECTORES =====================
+export const getInspectores = onCall(
+  {region: "southamerica-west1"},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Usuario no autenticado");
+    }
+
+    try {
+      const userDoc = await db.collection("users").doc(request.auth.uid).get();
+      const userData = userDoc.data();
+      
+      if (!userData || (userData.role !== "gerente" && userData.rol !== "gerente")) {
+        throw new HttpsError("permission-denied", "Solo gerentes pueden ver inspectores");
+      }
+
+      const inspectoresSnapshot = await db
+        .collection("users")
+        .where("role", "==", "inspector")
+        .get();
+
+      const inspectores = inspectoresSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      return {inspectores};
+    } catch (error) {
+      console.error("Error obteniendo inspectores:", error);
+      throw new HttpsError("internal", "Error al obtener inspectores");
+    }
+  }
+);
+
+// ===================== FUNCIÓN PARA CREAR INSPECTOR =====================
+export const createInspector = onCall(
+  {region: "southamerica-west1"},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Usuario no autenticado");
+    }
+
+    const {email, name, code, phone} = request.data;
+    if (!email || !name || !code) {
+      throw new HttpsError("invalid-argument", "Datos incompletos");
+    }
+
+    try {
+      const userDoc = await db.collection("users").doc(request.auth.uid).get();
+      const userData = userDoc.data();
+      
+      if (!userData || (userData.role !== "gerente" && userData.rol !== "gerente")) {
+        throw new HttpsError("permission-denied", "Solo gerentes pueden crear inspectores");
+      }
+
+      // Crear usuario en Authentication
+      const userRecord = await admin.auth().createUser({
+        email,
+        password: "inspector123", // Contraseña temporal
+        displayName: name,
+      });
+
+      // Crear documento en Firestore
+      await db.collection("users").doc(userRecord.uid).set({
+        email,
+        name,
+        code,
+        phone: phone || "",
+        role: "inspector",
+        status: "Activo",
+        createdAt: admin.firestore.Timestamp.now(),
+        createdBy: request.auth.uid,
+      });
+
+      return {success: true, uid: userRecord.uid};
+    } catch (error) {
+      console.error("Error creando inspector:", error);
+      throw new HttpsError("internal", "Error al crear inspector");
+    }
+  }
+);
+
+// ===================== FUNCIÓN PARA ACTUALIZAR INSPECTOR =====================
+export const updateInspector = onCall(
+  {region: "southamerica-west1"},
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Usuario no autenticado");
+    }
+
+    const {inspectorId, name, code, phone, status} = request.data;
+    if (!inspectorId) {
+      throw new HttpsError("invalid-argument", "ID de inspector requerido");
+    }
+
+    try {
+      const userDoc = await db.collection("users").doc(request.auth.uid).get();
+      const userData = userDoc.data();
+      
+      if (!userData || (userData.role !== "gerente" && userData.rol !== "gerente")) {
+        throw new HttpsError("permission-denied", "Solo gerentes pueden actualizar inspectores");
+      }
+
+      const updateData: any = {
+        updatedAt: admin.firestore.Timestamp.now(),
+        updatedBy: request.auth.uid,
+      };
+
+      if (name) updateData.name = name;
+      if (code) updateData.code = code;
+      if (phone !== undefined) updateData.phone = phone;
+      if (status) updateData.status = status;
+
+      await db.collection("users").doc(inspectorId).update(updateData);
+
+      return {success: true};
+    } catch (error) {
+      console.error("Error actualizando inspector:", error);
+      throw new HttpsError("internal", "Error al actualizar inspector");
+    }
+  }
 );

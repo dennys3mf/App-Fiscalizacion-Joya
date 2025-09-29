@@ -1,10 +1,9 @@
-// lib/screens/admin_dashboard_screen.dart (versión con UI mejorada)
+// lib/screens/admin_dashboard_screen.dart
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-// Usamos íconos de Material para máxima compatibilidad
 import '../theme/app_theme.dart';
-// ¡Reutilizaremos la pantalla que ya creamos como una pestaña!
 import 'admin_inspectores_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {

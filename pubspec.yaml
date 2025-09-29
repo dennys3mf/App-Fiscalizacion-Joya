@@ -4,64 +4,62 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.1.0 <4.0.0'
 
 dependencies:
   flutter:
     sdk: flutter
 
   # ---- Firebase ----
-  image_picker: ^1.2.0
-  
-
-
   firebase_core: ^4.1.0
   firebase_auth: ^6.0.2
   firebase_auth_platform_interface: ^8.1.1
   cloud_firestore: ^6.0.1
-
-  firebase_storage: ^13.0.1 # Para almacenamiento de archivos en Firebase
-  cupertino_icons: ^1.0.8
-  esc_pos_utils_plus: ^2.0.4
-  intl: ^0.20.2                   # Versión corregida
-  shared_preferences: ^2.2.3
-  url_launcher: ^6.3.1
-  permission_handler: ^12.0.1     # <-- El que faltaba
-  image: ^4.2.0
-  print_bluetooth_thermal: ^1.1.6 # Esta es la versión correcta y estable
-  path_provider: ^2.1.5 # O la última versión que veas en pub.dev
-  crypto: ^3.0.3
-  pdf: ^3.11.3                    # <-- Movido a la sección correcta
-  printing: ^5.14.2               # <-- Movido a la sección correcta
-  firebase_app_check: ^0.4.0+1
+  firebase_storage: ^13.0.1
   cloud_functions: ^6.0.1
-  flutter_lucide: ^1.7.0
+  
+  firebase_app_check: ^0.4.0+1
+
+  # ---- UI & State Management ----
+  provider: ^6.1.2
   fl_chart: ^0.69.0
+  cupertino_icons: ^1.0.8
+  flutter_lucide: ^1.7.0
+
+# Bluetooth y Impresión - PLUGIN ALTERNATIVO MÁS ESTABLE
+  # flutter_bluetooth_serial: ^0.4.0
+  permission_handler: ^11.2.0
+  shared_preferences: ^2.2.2
+
+  # ---- Utilities ----
+  image_picker: ^1.2.0
+  intl: ^0.20.2
+  url_launcher: ^6.3.1
+  path_provider: ^2.1.5
+  crypto: ^3.0.3
   vector_math: ^2.1.4
 
+  # ---- Printing & PDF ----
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  esc_pos_utils_plus: ^2.0.4
+  print_bluetooth_thermal: ^1.1.6
+  image: ^4.2.0
+  flutter_image_compress: ^2.4.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0 
-
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
     - assets/fonts/
- 
-  # La palabra 'fonts:' debe tener 2 espacios a la izquierda.
-  # El primer guion '-' debe tener 4 espacios a la izquierda.
-  # 'family' debe tener 6 espacios.
-  # El segundo 'fonts:' debe tener 8 espacios.
-  # El segundo guion '-' debe tener 10 espacios.
-  # 'asset' debe tener 12 espacios.
   fonts:
     - family: Roboto
       fonts:
         - asset: assets/fonts/Roboto-Italic-VariableFont_wdth,wght.ttf
         - asset: assets/fonts/Roboto-VariableFont_wdth,wght.ttf
           weight: 700
-  

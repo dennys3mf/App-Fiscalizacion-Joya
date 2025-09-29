@@ -1,112 +1,150 @@
-import 'package:app_fiscalizacion/screens/dashboard_screen.dart';
-import 'package:app_fiscalizacion/screens/login_screen.dart';
-import 'package:app_fiscalizacion/screens/admin_dashboard_screen.dart';
+// lib/screens/auth_wrapper.dart
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../services/auth_service.dart';
+import '../models/user_model.dart';
+
+import 'login_screen.dart';
+import 'home_screen.dart'; // ✅ AGREGADO: Para inspectores en móvil
+import 'manager_dashboard_screen.dart';
+import 'admin_dashboard_screen.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final authService = Provider.of<AuthService>(context);
+
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+      stream: authService.user,
       builder: (context, snapshot) {
-        // Mientras espera la conexión, muestra un spinner
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+            body: Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
         }
 
-        // Si el usuario no está logueado (user es null), va al Login
-        if (!snapshot.hasData || snapshot.data == null) {
-          // Usuario no autenticado: mostrar login con mensaje vacío (requerido por el constructor)
+        final User? firebaseUser = snapshot.data;
+
+        if (firebaseUser == null) {
+          // Usuario no autenticado: mostrar login
           return const LoginScreen(errorMessage: '');
-        }
+        } else {
+          // Usuario autenticado: obtener su modelo de usuario para determinar el rol
+          return FutureBuilder<UserModel?>(
+            future: authService.getCurrentUser(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              }
 
-        // Si el usuario SÍ está logueado, verificamos su rol
-        return RoleBasedRedirect(userId: snapshot.data!.uid);
-      },
-    );
-  }
-}
+              if (userSnapshot.hasError) {
+                // Error al obtener datos del usuario
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  authService.signOut();
+                });
+                return const LoginScreen(
+                  errorMessage:
+                      'Error al cargar datos del usuario. Inicie sesión nuevamente.',
+                );
+              }
 
-class RoleBasedRedirect extends StatelessWidget {
-  final String userId;
+              final UserModel? userModel = userSnapshot.data;
+              if (userModel == null) {
+                // Usuario no encontrado en Firestore
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  authService.signOut();
+                });
+                return const LoginScreen(
+                  errorMessage: 'Usuario no encontrado en el sistema.',
+                );
+              }
 
-  const RoleBasedRedirect({super.key, required this.userId});
+              final String userRole = userModel.rol.toLowerCase();
 
-  @override
-  Widget build(BuildContext context) {
-    // Usamos un FutureBuilder para obtener el rol del usuario desde Firestore una sola vez
-    return FutureBuilder<DocumentSnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get(const GetOptions(source: Source.serverAndCache)),
-      builder: (context, userDocSnapshot) {
-        // Mientras carga los datos del usuario
-        if (userDocSnapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
-        }
-
-        // Si no se encuentra el documento del usuario o hay un error
-        if (!userDocSnapshot.hasData || !userDocSnapshot.data!.exists) {
-          // Por seguridad, cerramos sesión y lo mandamos al login
-          FirebaseAuth.instance.signOut();
-          return const LoginScreen(
-              errorMessage: 'No se encontraron datos del usuario.');
-        }
-
-        // Obtenemos el rol del documento del usuario
-        final userData = userDocSnapshot.data!.data() as Map<String, dynamic>;
-        // Soportar ambas claves: 'rol' (ES) y 'role' (EN). Normalizamos a minúsculas.
-        final String userRole =
-            ((userData['role'] ?? userData['rol']) ?? 'inspector')
-                .toString()
-                .toLowerCase()
-                .trim();
-
-        // --- INICIO DE LA MODIFICACIÓN ---
-        // 1. Imprimimos el rol que estamos leyendo para depurar.
-        print(
-            'AuthWrapper Check -> Rol del usuario: "$userRole" | Plataforma: ${kIsWeb ? "Web" : "Móvil"}');
-        // --- FIN DE LA MODIFICACIÓN ---
-
-        // 1. SI ESTAMOS EN LA WEB
-        if (kIsWeb) {
-          if (userRole == 'gerente') {
-            // En web usamos el dashboard respaldado por Cloud Functions
-            // para evitar problemas de permisos de Firestore en cliente.
-            return AdminDashboardScreen(onBack: () {});
-          } else {
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // 2. Imprimimos por qué estamos denegando el acceso.
-            print(
-                'AuthWrapper Check -> ¡Acceso denegado en web! El rol "$userRole" no es "gerente". Cerrando sesión.');
-            // --- FIN DE LA MODIFICACIÓN ---
-
-            // Si cualquier otro rol (ej. 'inspector') intenta acceder por la web, lo bloqueamos.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              FirebaseAuth.instance.signOut();
-            });
-            return const LoginScreen(
-              errorMessage: 'Acceso exclusivo para administradores.',
-            );
-          }
-        }
-        // 2. SI ESTAMOS EN MÓVIL
-        else {
-          if (userRole == 'inspector') {
-            // Flujo normal para inspectores en móvil
-            return DashboardScreen(onBack: () {});
-          } else {
-            // Si un gerente usa la app móvil, lo mandamos al mismo dashboard
-            return DashboardScreen(onBack: () {});
-          }
+              if (kIsWeb) {
+                // ===== PLATAFORMA WEB =====
+                if (userRole == 'inspector') {
+                  // Los inspectores no tienen acceso a la web
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    authService.signOut();
+                  });
+                  return const LoginScreen(
+                    errorMessage:
+                        'Los inspectores deben usar la aplicación móvil.',
+                  );
+                } else if (userRole == 'gerente') {
+                  // Los gerentes van al ManagerDashboardScreen en web
+                  return ManagerDashboardScreen();
+                } else if (userRole == 'admin') {
+                  // Los admins van al AdminDashboardScreen en web
+                  return AdminDashboardScreen(onBack: () {});
+                } else {
+                  // Rol desconocido
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    authService.signOut();
+                  });
+                  return const LoginScreen(
+                    errorMessage:
+                        'Rol de usuario no reconocido para la plataforma web.',
+                  );
+                }
+              } else {
+                // ===== PLATAFORMA MÓVIL =====
+                if (userRole == 'inspector') {
+                  // ✅ CORREGIDO: Los inspectores van al HomeScreen en móvil
+                  return HomeScreen(
+                    currentUser: userModel,
+                    onLogout: () {
+                      authService.signOut();
+                    },
+                    onNavigate: (String route) {},
+                    username: '',
+                  );
+                } else if (userRole == 'gerente') {
+                  // Los gerentes pueden usar el HomeScreen o un dashboard específico
+                  // Por ahora, usamos HomeScreen para consistencia
+                  return HomeScreen(
+                    currentUser: userModel,
+                    onLogout: () {
+                      authService.signOut();
+                    },
+                    onNavigate: (String route) {},
+                    username: '',
+                  );
+                } else if (userRole == 'admin') {
+                  // Los admins pueden usar el HomeScreen o un dashboard específico
+                  return HomeScreen(
+                    currentUser: userModel,
+                    onLogout: () {
+                      authService.signOut();
+                    },
+                    onNavigate: (String route) {},
+                    username: '',
+                  );
+                } else {
+                  // Rol desconocido o no permitido en móvil
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    authService.signOut();
+                  });
+                  return const LoginScreen(
+                    errorMessage: 'Rol de usuario no reconocido.',
+                  );
+                }
+              }
+            },
+          );
         }
       },
     );

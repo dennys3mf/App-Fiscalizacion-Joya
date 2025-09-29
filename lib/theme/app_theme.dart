@@ -1,205 +1,238 @@
+// lib/theme/app_theme.dart
+
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // La Joya Avanza Color Palette
-  static const Color primaryRed = Color(0xFFDC143C);
-  static const Color backgroundLight = Color(0xFFF8F9FA);
-  static const Color foregroundDark = Color(0xFF1A1D29);
-  static const Color cardWhite = Color(0xFFFFFFFF);
-  static const Color secondaryGray = Color(0xFF6B7280);
-  static const Color mutedGray = Color(0xFFF1F5F9);
-  static const Color mutedForeground = Color(0xFF64748B);
-  static const Color accentRed = Color(0xFFE11D48);
-  static const Color borderColor = Color(0x14DC143C);
-
-  // Compatibilidad con código existente
-  static const Color background = backgroundLight;
-  static const Color primaryBlue = Color(0xFF005A9C);
-  static const Color card = cardWhite;
-  static const Color accent = accentRed;
-  static const Color border = borderColor;
-
-  static ThemeData lightTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: primaryRed,
-      brightness: Brightness.light,
-      primary: primaryRed,
-      onPrimary: Colors.white,
-      secondary: secondaryGray,
-      onSecondary: Colors.white,
-      surface: cardWhite,
-      onSurface: foregroundDark,
-      background: backgroundLight,
-      onBackground: foregroundDark,
-    ),
-    scaffoldBackgroundColor: backgroundLight,
-    appBarTheme: const AppBarTheme(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      foregroundColor: foregroundDark,
-      titleTextStyle: TextStyle(
-        color: foregroundDark,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        fontFamily: 'Inter',
-      ),
-    ),
-    cardTheme: CardThemeData(
-      color: cardWhite,
-      elevation: 8,
-      shadowColor: Colors.black.withOpacity(0.1),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
-    ),
-    elevatedButtonTheme: ElevatedButtonThemeData(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: primaryRed,
-        foregroundColor: Colors.white,
-        elevation: 4,
-        shadowColor: primaryRed.withOpacity(0.3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-        textStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Inter',
-        ),
-      ),
-    ),
-    outlinedButtonTheme: OutlinedButtonThemeData(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: primaryRed,
-        side: const BorderSide(color: primaryRed, width: 1.5),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-        textStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          fontFamily: 'Inter',
-        ),
-      ),
-    ),
-    inputDecorationTheme: InputDecorationTheme(
-      filled: true,
-      fillColor: mutedGray.withOpacity(0.3),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: const BorderSide(color: primaryRed, width: 2),
-      ),
-      labelStyle: const TextStyle(
-        color: mutedForeground,
-        fontFamily: 'Inter',
-        fontWeight: FontWeight.w500,
-      ),
-      hintStyle: const TextStyle(
-        color: mutedForeground,
-        fontFamily: 'Inter',
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-    ),
-    textTheme: const TextTheme(
-      displayLarge: TextStyle(
-        color: foregroundDark,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-        fontFamily: 'Inter',
-      ),
-      displayMedium: TextStyle(
-        color: foregroundDark,
-        fontSize: 28,
-        fontWeight: FontWeight.bold,
-        fontFamily: 'Inter',
-      ),
-      displaySmall: TextStyle(
-        color: foregroundDark,
-        fontSize: 24,
-        fontWeight: FontWeight.w600,
-        fontFamily: 'Inter',
-      ),
-      headlineLarge: TextStyle(
-        color: foregroundDark,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        fontFamily: 'Inter',
-      ),
-      headlineMedium: TextStyle(
-        color: foregroundDark,
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        fontFamily: 'Inter',
-      ),
-      bodyLarge: TextStyle(
-        color: foregroundDark,
-        fontSize: 16,
-        fontWeight: FontWeight.normal,
-        fontFamily: 'Inter',
-      ),
-      bodyMedium: TextStyle(
-        color: foregroundDark,
-        fontSize: 14,
-        fontWeight: FontWeight.normal,
-        fontFamily: 'Inter',
-      ),
-      bodySmall: TextStyle(
-        color: mutedForeground,
-        fontSize: 12,
-        fontWeight: FontWeight.normal,
-        fontFamily: 'Inter',
-      ),
-    ),
-    fontFamily: 'Inter',
-  );
-
-  static ThemeData darkTheme = lightTheme.copyWith(
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: primaryRed,
-      brightness: Brightness.dark,
-    ),
-  );
-
-  // Compatibilidad con código existente
-  static ThemeData get theme => lightTheme;
-
-  // Gradientes personalizados
-  static const LinearGradient primaryGradient = LinearGradient(
-    colors: [
-      Color(0xFF8ECDF7), // Celeste suave
-      Color(0xFFDC143C), // Rojo principal
-    ],
+  // Colores principales
+  static const Color primaryRed = Color(0xFFDC2626);
+  static const Color primaryBlue = Color(0xFF1E40AF);
+  static const Color primaryGreen = Color(0xFF16A34A);
+  static const Color primaryYellow = Color(0xFFF59E0B);
+  static const Color primaryPurple = Color(0xFF7C3AED);
+  
+  // Colores de texto
+  static const Color mutedForeground = Color(0xFF6B7280);
+  static const Color darkText = Color(0xFF111827);
+  static const Color foregroundDark = Color(0xFF374151); // Agregado para compatibilidad
+  
+  // Gradientes
+  static const LinearGradient backgroundGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-  );
-
-  static const LinearGradient backgroundGradient = LinearGradient(
     colors: [
-      Color(0xFFF8F9FA), // Fondo claro
-      Color(0xFFFFE2E2), // Rosa muy suave
+      Color.fromARGB(255, 224, 223, 223),
+      Color.fromARGB(255, 226, 224, 224),
     ],
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
+  );
+  static const LinearGradient historialGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color.fromARGB(255, 20, 19, 19),
+      Color.fromARGB(255, 230, 226, 226),
+    ],
   );
 
   static const LinearGradient cardGradient = LinearGradient(
-    colors: [
-      Color(0xFFFFFFFF), // Blanco
-      Color(0xFFF8F9FA), // Fondo muy claro
-    ],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
+    colors: [
+      Colors.white,
+      Color(0xFFFAFAFA),
+    ],
   );
+
+  // Agregado para compatibilidad con otros archivos
+  static const LinearGradient primaryGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      primaryRed,
+      Color(0xFFB91C1C),
+    ],
+  );
+
+  // Tema claro
+  static ThemeData get lightTheme {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: primaryRed,
+        brightness: Brightness.light,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: darkText),
+        titleTextStyle: TextStyle(
+          color: darkText,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 4,
+        shadowColor: Colors.black.withOpacity(0.1),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryRed,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: primaryRed, width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: primaryRed,
+        unselectedLabelColor: mutedForeground,
+        indicator: const BoxDecoration(
+          color: primaryRed,
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
+      ),
+    );
+  }
+
+  // Tema oscuro
+  static ThemeData get darkTheme {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: primaryRed,
+        brightness: Brightness.dark,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: IconThemeData(color: Colors.white),
+        titleTextStyle: TextStyle(
+          color: Colors.white,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        elevation: 4,
+        shadowColor: Colors.black.withOpacity(0.3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        color: const Color(0xFF1F2937),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryRed,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF374151)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF374151)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: primaryRed, width: 2),
+        ),
+        filled: true,
+        fillColor: const Color(0xFF1F2937),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+      tabBarTheme: TabBarThemeData(
+        labelColor: primaryRed,
+        unselectedLabelColor: mutedForeground,
+        indicator: const BoxDecoration(
+          color: primaryRed,
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
+      ),
+    );
+  }
+
+  // Estilos de texto personalizados
+  static const TextStyle headingLarge = TextStyle(
+    fontSize: 32,
+    fontWeight: FontWeight.bold,
+    color: darkText,
+  );
+
+  static const TextStyle headingMedium = TextStyle(
+    fontSize: 24,
+    fontWeight: FontWeight.bold,
+    color: darkText,
+  );
+
+  static const TextStyle headingSmall = TextStyle(
+    fontSize: 20,
+    fontWeight: FontWeight.w600,
+    color: darkText,
+  );
+
+  static const TextStyle bodyLarge = TextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.normal,
+    color: darkText,
+  );
+
+  static const TextStyle bodyMedium = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.normal,
+    color: darkText,
+  );
+
+  static const TextStyle bodySmall = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.normal,
+    color: mutedForeground,
+  );
+
+  static const TextStyle caption = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.normal,
+    color: mutedForeground,
+  );
+
+  static var cardWhite;
+
+  static var backgroundLight;
+
+  static var mutedGray;
 }
